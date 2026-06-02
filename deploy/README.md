@@ -43,13 +43,26 @@ project #1. It then installs any missing tooling, creates the isolated DB,
 clones the repo to `/var/www/leave-planner`, and writes `backend/.env` with a
 generated DB password + JWT secret.
 
-## Step 2 — Fill in the env
+## Step 2 — Fill in the secrets
+
+The domain, admin email, and SMTP host/user are already preset in `backend/.env`
+(written by setup.sh). Only the three live secrets are left as `FILL_ON_SERVER`
+because they must never be committed to git:
+
+- `SMTP_PASS`  (ZeptoMail token)
+- `OPENAI_API_KEY`  (optional)
+- `ADMIN_PASSWORD`
+
+Fill them with `sed` (paste the real values), or just `nano backend/.env`:
 
 ```bash
-nano /var/www/leave-planner/backend/.env
+cd /var/www/leave-planner/backend
+sed -i 's#^SMTP_PASS=.*#SMTP_PASS=<your-zeptomail-token>#'      .env
+sed -i 's#^ADMIN_PASSWORD=.*#ADMIN_PASSWORD=<your-admin-pass>#' .env
+sed -i 's#^OPENAI_API_KEY=.*#OPENAI_API_KEY=<your-openai-key>#' .env
 ```
-Set: `FRONTEND_URL` (your https domain), `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
-`ADMIN_NAME`, and the `SMTP_*` values. Leave `COOKIE_SECURE=true` (HTTPS).
+The DB password and JWT secret are already generated and in place. Keep
+`COOKIE_SECURE=true`.
 
 ## Step 3 — Build & start
 
