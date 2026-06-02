@@ -62,6 +62,7 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
           userName={user.employee?.fullName || user.email}
           userEmail={user.email}
           role={user.role}
+          canViewTeamCalendar={user.employee?.canViewTeamCalendar}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 scrollbar-thin">
           {children}

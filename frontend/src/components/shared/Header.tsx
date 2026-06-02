@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 import { NotificationBell } from "./NotificationBell";
+import { MobileNav } from "./MobileNav";
 
 const pageTitles: Record<string, string> = {
   "/admin/dashboard": "Dashboard",
@@ -30,9 +31,10 @@ interface HeaderProps {
   userName?: string;
   userEmail?: string;
   role?: string;
+  canViewTeamCalendar?: boolean;
 }
 
-export function Header({ userName, userEmail, role }: HeaderProps) {
+export function Header({ userName, userEmail, role, canViewTeamCalendar }: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -59,7 +61,15 @@ export function Header({ userName, userEmail, role }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 flex items-center px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 gap-4">
+    <header className="h-16 flex items-center px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 gap-2 md:gap-4">
+      {/* Mobile hamburger → full-nav drawer */}
+      <MobileNav
+        role={role === "ADMIN" ? "admin" : "employee"}
+        userName={userName}
+        userEmail={userEmail}
+        canViewTeamCalendar={canViewTeamCalendar}
+      />
+
       {/* Mobile logo */}
       <div className="md:hidden flex items-center gap-2">
         <div className="h-7 w-7 bg-primary rounded-lg flex items-center justify-center shrink-0">
