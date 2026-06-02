@@ -5,11 +5,11 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   CalendarDays, Home, Plus, ChevronLeft, ChevronRight,
-  Calendar, Star, Users,
+  Calendar, Star, Users, Megaphone, X, Sparkles, Cake,
 } from "lucide-react";
 import api from "@/lib/api";
 import { LEAVE_TYPE_LABELS, leaveStatusVariant, formatDate } from "@/lib/utils";
-import type { LeaveBalance } from "@/types";
+import type { LeaveBalance, Announcement } from "@/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { WeaveSpinner } from "@/components/ui/weave-spinner";
@@ -54,6 +54,7 @@ interface DashboardData {
   recentApplications: RecentApp[];
   upcomingHolidays: Holiday[];
   calendarEvents: CalendarEvent[];
+  announcements: Announcement[];
   employee: {
     fullName: string;
     employeeId: string;
@@ -240,10 +241,27 @@ export default function EmployeeDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  const handleDismissAnnouncement = async (id: string) => {
+    try {
+      await api.post(`/employee/portal/announcements/${id}/dismiss`);
+      setData((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          announcements: prev.announcements.filter((a) => a.id !== id),
+        };
+      });
+      toast.success("Announcement dismissed");
+    } catch {
+      toast.error("Failed to dismiss announcement");
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <WeaveSpinner className="animate-spin text-primary" size={28} />
+      <div className="flex flex-col items-center justify-center py-32">
+        <WeaveSpinner className="animate-spin text-primary" size={36} />
+        <p className="text-xs text-slate-400 mt-3 font-medium">Syncing portal details...</p>
       </div>
     );
   }
@@ -256,7 +274,15 @@ export default function EmployeeDashboard() {
     );
   }
 
-  const { leaveBalances, wfhBalance, recentApplications, upcomingHolidays, calendarEvents, employee } = data;
+  const {
+    leaveBalances,
+    wfhBalance,
+    recentApplications,
+    upcomingHolidays,
+    calendarEvents,
+    announcements,
+    employee,
+  } = data;
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return "Good morning";
@@ -380,15 +406,132 @@ export default function EmployeeDashboard() {
         </Link>
       </div>
 
-      {/* Two-column layout */}
+      {/* Three-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left: Calendar + Upcoming holidays */}
-        <div className="space-y-4">
+        {/* Col 1: Calendar */}
+        <div>
           <MiniCalendar
             year={data.currentYear}
             month={data.currentMonth}
             events={calendarEvents}
           />
+        </div>
+
+        {/* Col 2: Announcements */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm min-h-[340px] max-h-[340px] flex flex-col overflow-hidden">
+          <h3 className="font-heading font-semibold text-slate-900 dark:text-white text-sm mb-3 flex items-center gap-1.5 shrink-0">
+            <Megaphone size={14} className="text-primary" />
+            Announcements
+          </h3>
+
+          <div className="flex-1 overflow-y-auto scrollbar-thin pr-1 space-y-3">
+            {announcements.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center py-10">
+                <Megaphone size={24} className="text-slate-300 dark:text-slate-700 mb-2 opacity-50" />
+                <p className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                  There is no announcement
+                </p>
+              </div>
+            ) : (
+              announcements.map((ann) => (
+                <div
+                  key={ann.id}
+                  className={cn(
+                    "relative p-3 rounded-xl border text-xs transition-all",
+                    ann.isBirthday
+                      ? "bg-gradient-to-tr from-rose-50 to-amber-50 dark:from-rose-950/10 dark:to-amber-950/10 border-amber-200 dark:border-amber-900/40"
+                      : ann.priority === "HIGH"
+                      ? "bg-rose-50/50 dark:bg-rose-950/10 border-rose-100 dark:border-rose-900/30"
+                      : ann.priority === "MEDIUM"
+                      ? "bg-blue-50/30 dark:bg-blue-950/10 border-blue-100 dark:border-blue-900/20"
+                      : "bg-slate-50/30 dark:bg-slate-800/20 border-slate-200 dark:border-slate-800"
+                  )}
+                >
+                  {/* Dismiss Button */}
+                  <button
+                    onClick={() => handleDismissAnnouncement(ann.id)}
+                    className="absolute top-2 right-2 p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 dark:text-slate-500 dark:hover:text-slate-350 dark:hover:bg-slate-800/50 transition-colors"
+                    title="Dismiss"
+                  >
+                    <X size={12} />
+                  </button>
+
+                  <div className="pr-4 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="font-bold text-slate-900 dark:text-white leading-tight">
+                        {ann.title}
+                      </p>
+                      {ann.isBirthday ? (
+                        <span className="text-[9px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.2 rounded flex items-center gap-0.5 animate-pulse">
+                          <Cake size={9} /> Birthday
+                        </span>
+                      ) : ann.priority === "HIGH" ? (
+                        <span className="text-[8px] font-bold bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-1.5 py-0.2 rounded uppercase tracking-wider">
+                          Urgent
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                      {ann.content}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Col 3: Applications & Holidays */}
+        <div className="space-y-4">
+          {/* Recent Applications */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-heading font-semibold text-slate-900 dark:text-white text-sm">
+                Recent Applications
+              </h3>
+              <Link href="/employee/my-leaves">
+                <Button variant="ghost" size="sm" className="text-xs h-7">View All</Button>
+              </Link>
+            </div>
+
+            {recentApplications.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 dark:text-slate-500">
+                <Calendar size={22} className="mx-auto mb-2 opacity-40" />
+                <p className="text-xs">No applications yet</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[220px] overflow-y-auto scrollbar-thin">
+                {recentApplications.map((app) => (
+                  <div key={`${app.appType}-${app.id}`} className="flex items-start gap-2.5 px-4 py-2.5">
+                    <div className={cn(
+                      "h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
+                      app.appType === "LEAVE"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400"
+                    )}>
+                      {app.appType === "LEAVE" ? <CalendarDays size={13} /> : <Home size={13} />}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                          {app.appType === "LEAVE"
+                            ? (LEAVE_TYPE_LABELS[app.leaveType ?? ""] ?? app.leaveType ?? "Leave")
+                            : "Work From Home"}
+                        </p>
+                        <StatusBadge status={app.status} />
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {formatDate(app.fromDate)}
+                        {app.fromDate !== app.toDate && ` → ${formatDate(app.toDate)}`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Upcoming holidays */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
@@ -406,14 +549,14 @@ export default function EmployeeDashboard() {
                   return (
                     <div key={h.id} className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">{h.name}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs font-medium text-slate-900 dark:text-white">{h.name}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
                           {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} ·{" "}
                           {d.toLocaleDateString("en-IN", { weekday: "short" })}
                         </p>
                       </div>
                       <span className={cn(
-                        "text-xs font-medium px-2 py-0.5 rounded-full",
+                        "text-[10px] font-medium px-2 py-0.5 rounded-full",
                         daysUntil <= 7
                           ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                           : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
@@ -423,66 +566,6 @@ export default function EmployeeDashboard() {
                     </div>
                   );
                 })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Recent applications */}
-        <div className="lg:col-span-2">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="font-heading font-semibold text-slate-900 dark:text-white text-sm">
-                Recent Applications
-              </h3>
-              <Link href="/employee/my-leaves">
-                <Button variant="ghost" size="sm" className="text-xs h-7">View All</Button>
-              </Link>
-            </div>
-
-            {recentApplications.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-                <Calendar size={28} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">No applications yet</p>
-                <p className="text-xs mt-1">Apply for leave or WFH to see them here</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {recentApplications.map((app) => (
-                  <div key={`${app.appType}-${app.id}`} className="flex items-start gap-3 px-5 py-3.5">
-                    <div className={cn(
-                      "h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5",
-                      app.appType === "LEAVE"
-                        ? "bg-primary/10 text-primary"
-                        : "bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400"
-                    )}>
-                      {app.appType === "LEAVE" ? <CalendarDays size={15} /> : <Home size={15} />}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">
-                          {app.appType === "LEAVE"
-                            ? (LEAVE_TYPE_LABELS[app.leaveType ?? ""] ?? app.leaveType ?? "Leave")
-                            : "Work From Home"}
-                        </p>
-                        <StatusBadge status={app.status} />
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {formatDate(app.fromDate)}
-                        {app.fromDate !== app.toDate && ` → ${formatDate(app.toDate)}`}
-                        {" · "}{app.totalDays} day{app.totalDays !== 1 ? "s" : ""}
-                      </p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-xs">
-                        {app.reason}
-                      </p>
-                    </div>
-
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0">
-                      {new Date(app.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
-                    </p>
-                  </div>
-                ))}
               </div>
             )}
           </div>

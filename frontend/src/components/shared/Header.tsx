@@ -16,6 +16,7 @@ const pageTitles: Record<string, string> = {
   "/admin/policy-manager": "Policy Manager",
   "/admin/wfh-policy": "WFH Policy",
   "/admin/leave-requests": "Leave Requests",
+  "/admin/announcements": "Announcements",
   "/admin/settings": "Settings",
   "/employee/dashboard": "Dashboard",
   "/employee/apply-leave": "Apply Leave",

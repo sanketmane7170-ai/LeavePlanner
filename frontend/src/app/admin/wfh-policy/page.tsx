@@ -886,10 +886,10 @@ export default function WfhPolicyPage() {
                 {...register("name")}
               />
               <Input
-                label="Total Days *"
+                label="Total Days / Year *"
                 type="number"
                 min="0"
-                placeholder="e.g. 10"
+                placeholder="e.g. 24"
                 error={errors.daysAllowed?.message}
                 {...register("daysAllowed")}
               />

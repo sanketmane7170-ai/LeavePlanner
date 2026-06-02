@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 import { calculateLeaveDays, isDuringProbation } from '../services/leaveCalculator';
 import {
@@ -97,7 +98,7 @@ export const getWfhBalance = async (req: AuthRequest, res: Response): Promise<an
       holidays,
     });
   } catch (error) {
-    console.error('getWfhBalance error:', error);
+    logger.error('getWfhBalance error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -122,6 +123,12 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
 
     if (!dateStr || !reason) {
       return res.status(400).json({ message: 'date and reason are required' });
+    }
+    if (typeof reason !== 'string' || reason.trim().length === 0 || reason.length > 500) {
+      return res.status(400).json({ message: 'Reason must be between 1 and 500 characters.' });
+    }
+    if (isNaN(new Date(dateStr).getTime()) || (toDateStr && isNaN(new Date(toDateStr).getTime()))) {
+      return res.status(400).json({ message: 'Invalid date format.' });
     }
 
     const employee = await getEmployeeForUser(userId);
@@ -264,6 +271,21 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
       },
     });
 
+    await prisma.auditLog.create({
+      data: {
+        adminId: userId,
+        action: 'APPLY_WFH',
+        targetType: 'WFH',
+        targetId: application.id,
+        meta: JSON.stringify({
+          fromDate: application.date.toISOString().split('T')[0],
+          toDate: application.toDate ? application.toDate.toISOString().split('T')[0] : null,
+          totalDays: application.totalDays,
+          status: application.status,
+        }),
+      },
+    }).catch((e) => logger.error('Failed to log applyWfh to auditLog:', e));
+
     // Emails (fire-and-forget)
     const emailDetails = {
       fromDate:         fromDate.toLocaleDateString('en-IN'),
@@ -281,14 +303,14 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
         admins.map((a) => a.email),
         { fullName: employee.fullName, employeeId: employee.employeeId, department: employee.department },
         emailDetails
-      ).catch((e) => console.error('[email] sendWfhAppliedAdminEmail failed:', e));
+      ).catch((e) => logger.error('[email] sendWfhAppliedAdminEmail failed:', e));
     }
 
     sendWfhSubmittedEmail(
       (employee as any).user?.email ?? '',
       employee.fullName,
       emailDetails
-    ).catch((e) => console.error('[email] sendWfhSubmittedEmail failed:', e));
+    ).catch((e) => logger.error('[email] sendWfhSubmittedEmail failed:', e));
 
     return res.status(201).json({
       message: requiresApproval
@@ -297,7 +319,7 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
       application,
     });
   } catch (error) {
-    console.error('applyWfh error:', error);
+    logger.error('applyWfh error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -332,7 +354,7 @@ export const getMyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
 
     return res.json({ data: wfhList, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch (error) {
-    console.error('getMyWfh error:', error);
+    logger.error('getMyWfh error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -391,7 +413,7 @@ export const getAdminWfh = async (req: AuthRequest, res: Response): Promise<any>
       totalPages: Math.ceil(total / limitNum),
     });
   } catch (error) {
-    console.error('getAdminWfh error:', error);
+    logger.error('getAdminWfh error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -413,12 +435,27 @@ export const approveWfh = async (req: AuthRequest, res: Response): Promise<any> 
 
     await prisma.wfhApplication.update({ where: { id }, data: { status: 'APPROVED' } });
 
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        action: 'APPROVE_WFH',
+        targetType: 'WFH',
+        targetId: wfh.id,
+        meta: JSON.stringify({
+          employeeName: wfh.employee.fullName,
+          fromDate: wfh.date.toISOString().split('T')[0],
+          toDate: wfh.toDate ? wfh.toDate.toISOString().split('T')[0] : null,
+          totalDays: wfh.totalDays,
+        }),
+      },
+    }).catch((e) => logger.error('Failed to log approveWfh to auditLog:', e));
+
     sendWfhStatusEmail(
       (wfh.employee as any).user?.email ?? '',
       wfh.employee.fullName,
       { fromDate: wfh.date.toLocaleDateString('en-IN'), toDate: (wfh.toDate ?? wfh.date).toLocaleDateString('en-IN'), isHalfDay: wfh.isHalfDay, halfDaySlot: wfh.halfDaySlot, totalDays: wfh.totalDays },
       'APPROVED'
-    ).catch((e) => console.error('[email] sendWfhStatusEmail APPROVED failed:', e));
+    ).catch((e) => logger.error('[email] sendWfhStatusEmail APPROVED failed:', e));
 
     await createNotification(
       wfh.employee.userId,
@@ -429,7 +466,7 @@ export const approveWfh = async (req: AuthRequest, res: Response): Promise<any> 
 
     return res.json({ message: 'WFH application approved.' });
   } catch (error) {
-    console.error('approveWfh error:', error);
+    logger.error('approveWfh error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -459,13 +496,29 @@ export const rejectWfh = async (req: AuthRequest, res: Response): Promise<any> =
       data: { status: 'REJECTED', adminComment: comment.trim() },
     });
 
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        action: 'REJECT_WFH',
+        targetType: 'WFH',
+        targetId: wfh.id,
+        meta: JSON.stringify({
+          employeeName: wfh.employee.fullName,
+          fromDate: wfh.date.toISOString().split('T')[0],
+          toDate: wfh.toDate ? wfh.toDate.toISOString().split('T')[0] : null,
+          totalDays: wfh.totalDays,
+          comment: comment.trim(),
+        }),
+      },
+    }).catch((e) => logger.error('Failed to log rejectWfh to auditLog:', e));
+
     sendWfhStatusEmail(
       (wfh.employee as any).user?.email ?? '',
       wfh.employee.fullName,
       { fromDate: wfh.date.toLocaleDateString('en-IN'), toDate: (wfh.toDate ?? wfh.date).toLocaleDateString('en-IN'), isHalfDay: wfh.isHalfDay, halfDaySlot: wfh.halfDaySlot, totalDays: wfh.totalDays },
       'REJECTED',
       comment.trim()
-    ).catch((e) => console.error('[email] sendWfhStatusEmail REJECTED failed:', e));
+    ).catch((e) => logger.error('[email] sendWfhStatusEmail REJECTED failed:', e));
 
     await createNotification(
       wfh.employee.userId,
@@ -476,7 +529,7 @@ export const rejectWfh = async (req: AuthRequest, res: Response): Promise<any> =
 
     return res.json({ message: 'WFH application rejected.' });
   } catch (error) {
-    console.error('rejectWfh error:', error);
+    logger.error('rejectWfh error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

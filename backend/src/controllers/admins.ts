@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 
 // ── GET /api/admin/admins ──────────────────────────────────────────────────
@@ -7,7 +8,11 @@ export const getAdmins = async (req: AuthRequest, res: Response): Promise<any> =
   try {
     const admins = await prisma.user.findMany({
       where: { role: 'ADMIN' },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        createdAt: true,
         employee: {
           select: {
             id: true,
@@ -23,7 +28,7 @@ export const getAdmins = async (req: AuthRequest, res: Response): Promise<any> =
 
     return res.json(admins);
   } catch (error) {
-    console.error('getAdmins error:', error);
+    logger.error('getAdmins error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -33,13 +38,16 @@ export const getCandidates = async (req: AuthRequest, res: Response): Promise<an
   try {
     // Candidates are users who are currently EMPLOYEE and have an active employee record
     const candidates = await prisma.user.findMany({
-      where: { 
+      where: {
         role: 'EMPLOYEE',
         employee: {
           isActive: true
         }
       },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        role: true,
         employee: {
           select: {
             id: true,
@@ -48,14 +56,14 @@ export const getCandidates = async (req: AuthRequest, res: Response): Promise<an
           }
         }
       },
-      orderBy: { 
+      orderBy: {
         employee: { fullName: 'asc' }
       }
     });
 
     return res.json(candidates);
   } catch (error) {
-    console.error('getCandidates error:', error);
+    logger.error('getCandidates error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -86,7 +94,7 @@ export const promoteAdmin = async (req: AuthRequest, res: Response): Promise<any
       message: `${updatedUser.employee?.fullName || updatedUser.email} has been promoted to Admin.` 
     });
   } catch (error) {
-    console.error('promoteAdmin error:', error);
+    logger.error('promoteAdmin error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -130,7 +138,7 @@ export const demoteAdmin = async (req: AuthRequest, res: Response): Promise<any>
       message: `${updatedUser.employee?.fullName || updatedUser.email} has been demoted to Employee.` 
     });
   } catch (error) {
-    console.error('demoteAdmin error:', error);
+    logger.error('demoteAdmin error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

@@ -9,15 +9,25 @@ import { toast } from "sonner";
 import {
   Home,
   AlertTriangle,
-  CheckCircle2, 
+  CheckCircle2,
+  ThumbsUp,
   Info,
 } from "lucide-react";
+import { differenceInDays, startOfDay } from "date-fns";
 import api from "@/lib/api";
 import { calculateLeaveDaysClient, formatDate } from "@/lib/utils";
 import type { WfhPolicy, WorkingSchedule } from "@/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { WeaveSpinner } from "@/components/ui/weave-spinner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 
 
@@ -32,12 +42,6 @@ interface WfhBalanceCtx {
   employee: { workingSchedule: WorkingSchedule | null };
   holidays: { id: string; name: string; date: string }[];
 }
-
-// ── Month name helper ─────────────────────────────────────────────────────────
-const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
 
 // ── Half-day slot button ──────────────────────────────────────────────────────
 function SlotButton({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
@@ -57,8 +61,8 @@ function SlotButton({ label, selected, onClick }: { label: string; selected: boo
   );
 }
 
-// ── Monthly balance bar ───────────────────────────────────────────────────────
-function MonthlyBalance({ ctx }: { ctx: WfhBalanceCtx }) {
+// ── Yearly balance bar ────────────────────────────────────────────────────────
+function YearlyBalance({ ctx }: { ctx: WfhBalanceCtx }) {
   const total = ctx.policy?.daysAllowed ?? 0;
   const used = ctx.usedDays;
   const pending = ctx.pendingDays;
@@ -71,7 +75,7 @@ function MonthlyBalance({ ctx }: { ctx: WfhBalanceCtx }) {
       <div className="flex items-start justify-between mb-2">
         <div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            WFH Balance — {MONTHS[(ctx.month - 1) % 12]} {ctx.year}
+            WFH Balance — {ctx.year}
           </p>
           <p className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
             {remaining}
@@ -114,6 +118,12 @@ export default function ApplyWfhPage() {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Confirmation dialog
+  const [warningType, setWarningType] = useState<
+    "NOTICE" | "BALANCE" | "AUTO_APPROVED" | "ALL_GOOD" | null
+  >(null);
+  const [showWarning, setShowWarning] = useState(false);
+
   useEffect(() => {
     api
       .get("/employee/wfh/balance")
@@ -144,16 +154,52 @@ export default function ApplyWfhPage() {
     return 0;
   }, [isHalfDay, singleDate, range, workingDays, saturdayRule, holidayDates]);
 
-  const handleSubmit = async () => {
+  const handleInitialSubmit = () => {
     if (!policy) return;
     const fromDate = isHalfDay ? singleDate : range?.from;
     const toDate   = isHalfDay ? singleDate : (range?.to ?? range?.from);
 
-    if (!fromDate) { toast.error("Please select a date"); return; }
+    if (!fromDate || !toDate) { toast.error("Please select a date"); return; }
     if (!reason.trim()) { toast.error("Please provide a reason"); return; }
     if (totalDays <= 0) { toast.error("No working days selected"); return; }
 
+    // 1. Balance check
+    if (ctx && ctx.remainingDays < totalDays) {
+      setWarningType("BALANCE");
+      setShowWarning(true);
+      return;
+    }
+
+    // 2. Notice period check
+    if (policy.noticeRequired && policy.minNoticeDays > 0) {
+      const today = startOfDay(new Date());
+      const start = startOfDay(fromDate);
+      if (differenceInDays(start, today) < policy.minNoticeDays) {
+        setWarningType("NOTICE");
+        setShowWarning(true);
+        return;
+      }
+    }
+
+    // 3. Auto-approved
+    if (!policy.approvalRequired) {
+      setWarningType("AUTO_APPROVED");
+      setShowWarning(true);
+      return;
+    }
+
+    setWarningType("ALL_GOOD");
+    setShowWarning(true);
+  };
+
+  const executeSubmit = async () => {
+    if (!policy) return;
+    const fromDate = isHalfDay ? singleDate : range?.from;
+    const toDate   = isHalfDay ? singleDate : (range?.to ?? range?.from);
+    if (!fromDate) return;
+
     setSubmitting(true);
+    setShowWarning(false);
     try {
       const payload: Record<string, any> = {
         date: fromDate.toISOString(),
@@ -211,12 +257,12 @@ export default function ApplyWfhPage() {
           <div>
             <p className="font-semibold text-slate-900 dark:text-white">{policy.name}</p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {policy.daysAllowed} days/month
+              {policy.daysAllowed} days/year
               {policy.approvalRequired ? " · Requires approval" : " · Auto-approved"}
             </p>
           </div>
         </div>
-        {ctx && <MonthlyBalance ctx={ctx} />}
+        {ctx && <YearlyBalance ctx={ctx} />}
       </div>
 
       {/* Half-day toggle */}
@@ -358,13 +404,78 @@ export default function ApplyWfhPage() {
         </Button>
         <Button
           className="flex-1"
-          onClick={handleSubmit}
+          onClick={handleInitialSubmit}
           disabled={submitting || totalDays <= 0 || !reason.trim()}
         >
           {submitting && <WeaveSpinner className="animate-spin mr-2" size={15} />}
           {submitting ? "Submitting…" : `Submit${totalDays > 0 ? ` (${totalDays} day${totalDays !== 1 ? "s" : ""})` : ""}`}
         </Button>
       </div>
+
+      {/* Confirmation / Warning Dialog */}
+      <Dialog open={showWarning} onOpenChange={setShowWarning}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className={cn("flex items-center gap-2",
+              (warningType === "AUTO_APPROVED" || warningType === "ALL_GOOD")
+                ? "text-green-600" : "text-amber-600"
+            )}>
+              {(warningType === "AUTO_APPROVED" || warningType === "ALL_GOOD")
+                ? <ThumbsUp size={20} /> : <AlertTriangle size={20} />}
+              {(warningType === "AUTO_APPROVED" || warningType === "ALL_GOOD") ? "Confirmation" : "Warning"}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-700 dark:text-slate-300 mt-4 leading-relaxed whitespace-pre-wrap">
+              {warningType === "BALANCE" && (
+                <>
+                  You don't have enough WFH balance!{"\n\n"}
+                  Your remaining balance is{" "}
+                  <strong>{ctx?.remainingDays ?? 0} day{(ctx?.remainingDays ?? 0) !== 1 ? "s" : ""}</strong>.{"\n"}
+                  Submitting may be rejected. Are you sure you want to apply?
+                </>
+              )}
+              {warningType === "NOTICE" && (
+                <>
+                  You are applying without sufficient notice!{"\n\n"}
+                  Your policy requires a minimum of{" "}
+                  <strong>{policy?.minNoticeDays} day{policy?.minNoticeDays !== 1 ? "s" : ""}</strong> advance notice.{"\n"}
+                  Your application may be rejected. Are you sure?
+                </>
+              )}
+              {warningType === "AUTO_APPROVED" && (
+                <>
+                  Great news!{"\n\n"}
+                  This WFH request does not require admin approval and will be{" "}
+                  <strong>auto-approved instantly</strong>.{"\n"}
+                  Are you sure you want to submit?
+                </>
+              )}
+              {warningType === "ALL_GOOD" && (
+                <>
+                  Everything looks good!{"\n\n"}
+                  You have sufficient balance (
+                  <strong>
+                    {Math.max(0, (ctx?.remainingDays ?? 0) - totalDays)} day
+                    {Math.max(0, (ctx?.remainingDays ?? 0) - totalDays) !== 1 ? "s" : ""} remaining
+                  </strong>
+                  ) after this request.{"\n"}
+                  Are you sure you want to submit?
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-6 flex sm:justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowWarning(false)}>
+              No, Cancel
+            </Button>
+            <Button onClick={executeSubmit} disabled={submitting}>
+              {submitting && <WeaveSpinner className="animate-spin mr-2" size={15} />}
+              {warningType === "AUTO_APPROVED" || warningType === "ALL_GOOD"
+                ? "Yes, Submit WFH"
+                : "Yes, Apply Anyway"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

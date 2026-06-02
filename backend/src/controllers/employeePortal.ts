@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 import { calculateEmployeeMonthReport } from '../services/reportCalculator';
 import { getOrInitBalance } from './leaves';
@@ -55,6 +56,7 @@ export const getEmployeeDashboard = async (req: AuthRequest, res: Response): Pro
       monthLeaves,
       monthWfh,
       monthHolidays,
+      announcements,
     ] = await Promise.all([
       // Current year leave balances — only active (non-archived) rows
       prisma.leaveBalance.findMany({ where: { employeeId: employee.id, year, isArchived: false } }),
@@ -118,6 +120,36 @@ export const getEmployeeDashboard = async (req: AuthRequest, res: Response): Pro
       prisma.publicHoliday.findMany({
         where: { date: { gte: monthStart, lte: monthEnd } },
         select: { date: true, name: true },
+      }),
+
+      // Active, non-dismissed announcements
+      prisma.announcement.findMany({
+        where: {
+          isActive: true,
+          AND: [
+            {
+              OR: [
+                { scheduledAt: null },
+                { scheduledAt: { lte: now } },
+              ],
+            },
+            {
+              OR: [
+                { expiresAt: null },
+                { expiresAt: { gte: now } },
+              ],
+            },
+          ],
+          dismissals: {
+            none: {
+              employeeId: employee.id,
+            },
+          },
+        },
+        orderBy: [
+          { priority: 'asc' },
+          { createdAt: 'desc' },
+        ],
       }),
     ]);
 
@@ -205,6 +237,7 @@ export const getEmployeeDashboard = async (req: AuthRequest, res: Response): Pro
       recentApplications,
       upcomingHolidays,
       calendarEvents,
+      announcements,
       employee: {
         id: employee.id,
         fullName: employee.fullName,
@@ -220,7 +253,7 @@ export const getEmployeeDashboard = async (req: AuthRequest, res: Response): Pro
       currentYear: year,
     });
   } catch (error) {
-    console.error('getEmployeeDashboard error:', error);
+    logger.error('getEmployeeDashboard error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -251,7 +284,7 @@ export const getEmployeeProfile = async (req: AuthRequest, res: Response): Promi
       employee: user.employee,
     });
   } catch (error) {
-    console.error('getEmployeeProfile error:', error);
+    logger.error('getEmployeeProfile error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -303,7 +336,7 @@ export const getMyPolicies = async (req: AuthRequest, res: Response): Promise<an
       wfhUsedThisMonth: wfhUsed._sum.totalDays ?? 0,
     });
   } catch (error) {
-    console.error('getMyPolicies error:', error);
+    logger.error('getMyPolicies error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -392,7 +425,7 @@ ${wp ? `
 
     return res.json({ explanation, policyContext });
   } catch (error: any) {
-    console.error('explainPolicy error:', error);
+    logger.error('explainPolicy error:', error);
     return res.status(500).json({ message: error?.message ?? 'Internal server error' });
   }
 };
@@ -442,7 +475,7 @@ export const getMonthlyCalendar = async (req: AuthRequest, res: Response): Promi
       },
     });
   } catch (error) {
-    console.error('getMonthlyCalendar error:', error);
+    logger.error('getMonthlyCalendar error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

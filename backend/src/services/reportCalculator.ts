@@ -225,36 +225,44 @@ export async function generateAndSaveAllMonthlyReports(
 
   const reports: MonthlyReportData[] = [];
 
-  for (const emp of employees) {
-    const report = await calculateEmployeeMonthReport(emp.id, month, year);
-    if (!report) continue;
+  // Process in batches to bound DB concurrency (avoid exhausting the connection pool)
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < employees.length; i += BATCH_SIZE) {
+    const batch = employees.slice(i, i + BATCH_SIZE);
+    const batchReports = await Promise.all(
+      batch.map(async (emp) => {
+        const report = await calculateEmployeeMonthReport(emp.id, month, year);
+        if (!report) return null;
 
-    // Upsert into MonthlyReport table for permanent history
-    await prisma.monthlyReport.upsert({
-      where: { employeeId_month_year: { employeeId: emp.id, month, year } },
-      create: {
-        employeeId:      emp.id,
-        month,
-        year,
-        totalWorkingDays: report.totalWorkingDays,
-        presentDays:      report.presentDays,
-        leaveDays:        report.leaveDays,
-        absentDays:       report.absentDays,
-        wfhDays:          report.wfhDays,
-        attendancePct:    report.attendancePct,
-      },
-      update: {
-        totalWorkingDays: report.totalWorkingDays,
-        presentDays:      report.presentDays,
-        leaveDays:        report.leaveDays,
-        absentDays:       report.absentDays,
-        wfhDays:          report.wfhDays,
-        attendancePct:    report.attendancePct,
-        generatedAt:      new Date(),
-      },
-    });
+        // Upsert into MonthlyReport table for permanent history
+        await prisma.monthlyReport.upsert({
+          where: { employeeId_month_year: { employeeId: emp.id, month, year } },
+          create: {
+            employeeId:       emp.id,
+            month,
+            year,
+            totalWorkingDays: report.totalWorkingDays,
+            presentDays:      report.presentDays,
+            leaveDays:        report.leaveDays,
+            absentDays:       report.absentDays,
+            wfhDays:          report.wfhDays,
+            attendancePct:    report.attendancePct,
+          },
+          update: {
+            totalWorkingDays: report.totalWorkingDays,
+            presentDays:      report.presentDays,
+            leaveDays:        report.leaveDays,
+            absentDays:       report.absentDays,
+            wfhDays:          report.wfhDays,
+            attendancePct:    report.attendancePct,
+            generatedAt:      new Date(),
+          },
+        });
 
-    reports.push(report);
+        return report;
+      })
+    );
+    reports.push(...batchReports.filter((r): r is MonthlyReportData => r !== null));
   }
 
   return reports;

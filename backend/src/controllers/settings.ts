@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 
 // ── Org Settings ──────────────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ export const getOrgSettings = async (req: AuthRequest, res: Response): Promise<a
     });
     return res.json(settings);
   } catch (error) {
-    console.error('getOrgSettings error:', error);
+    logger.error('getOrgSettings error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -33,7 +34,7 @@ export const updateOrgSettings = async (req: AuthRequest, res: Response): Promis
 
     return res.json({ message: 'Settings updated', settings });
   } catch (error) {
-    console.error('updateOrgSettings error:', error);
+    logger.error('updateOrgSettings error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -49,7 +50,7 @@ export const getHolidays = async (req: AuthRequest, res: Response): Promise<any>
     });
     return res.json(holidays);
   } catch (error) {
-    console.error('getHolidays error:', error);
+    logger.error('getHolidays error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -67,7 +68,7 @@ export const addHoliday = async (req: AuthRequest, res: Response): Promise<any> 
     });
     return res.status(201).json(holiday);
   } catch (error) {
-    console.error('addHoliday error:', error);
+    logger.error('addHoliday error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -78,7 +79,7 @@ export const deleteHoliday = async (req: AuthRequest, res: Response): Promise<an
     await prisma.publicHoliday.delete({ where: { id } });
     return res.json({ message: 'Holiday deleted' });
   } catch (error) {
-    console.error('deleteHoliday error:', error);
+    logger.error('deleteHoliday error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -92,7 +93,7 @@ export const getDepartments = async (req: AuthRequest, res: Response): Promise<a
     });
     return res.json(departments);
   } catch (error) {
-    console.error('getDepartments error:', error);
+    logger.error('getDepartments error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -108,7 +109,7 @@ export const addDepartment = async (req: AuthRequest, res: Response): Promise<an
     const department = await prisma.department.create({ data: { name: name.trim() } });
     return res.status(201).json(department);
   } catch (error) {
-    console.error('addDepartment error:', error);
+    logger.error('addDepartment error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -119,7 +120,7 @@ export const deleteDepartment = async (req: AuthRequest, res: Response): Promise
     await prisma.department.delete({ where: { id } });
     return res.json({ message: 'Department deleted' });
   } catch (error) {
-    console.error('deleteDepartment error:', error);
+    logger.error('deleteDepartment error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -131,7 +132,7 @@ export const getRoles = async (req: AuthRequest, res: Response): Promise<any> =>
     const roles = await prisma.employeeRole.findMany({ orderBy: { name: 'asc' } });
     return res.json(roles);
   } catch (error) {
-    console.error('getRoles error:', error);
+    logger.error('getRoles error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -147,7 +148,7 @@ export const addRole = async (req: AuthRequest, res: Response): Promise<any> => 
     const role = await prisma.employeeRole.create({ data: { name: name.trim() } });
     return res.status(201).json(role);
   } catch (error) {
-    console.error('addRole error:', error);
+    logger.error('addRole error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -158,7 +159,7 @@ export const deleteRole = async (req: AuthRequest, res: Response): Promise<any> 
     await prisma.employeeRole.delete({ where: { id } });
     return res.json({ message: 'Role deleted' });
   } catch (error) {
-    console.error('deleteRole error:', error);
+    logger.error('deleteRole error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -183,17 +184,27 @@ export const getAuditLog = async (req: AuthRequest, res: Response): Promise<any>
     const adminIds = [...new Set(logs.map((l) => l.adminId))];
     const admins = await prisma.user.findMany({
       where: { id: { in: adminIds } },
-      include: { employee: { select: { fullName: true, employeeId: true } } },
+      select: { id: true, email: true, employee: { select: { fullName: true, employeeId: true } } },
     });
     const adminMap = new Map(
       admins.map((a) => [a.id, a.employee?.fullName ?? a.email])
     );
 
-    const enriched = logs.map((l) => ({ ...l, adminName: adminMap.get(l.adminId) ?? 'Unknown' }));
+    const enriched = logs.map((l) => {
+      let adminName = 'System';
+      if (l.adminId === 'SYSTEM') {
+        adminName = 'System';
+      } else if (l.adminId === 'CRON' || l.adminId === 'AUTOMATED') {
+        adminName = 'Automated Cron';
+      } else {
+        adminName = adminMap.get(l.adminId) ?? 'Unknown';
+      }
+      return { ...l, adminName };
+    });
 
     return res.json({ data: enriched, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch (error) {
-    console.error('getAuditLog error:', error);
+    logger.error('getAuditLog error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

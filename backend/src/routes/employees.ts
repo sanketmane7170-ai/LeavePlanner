@@ -10,6 +10,7 @@ import {
   getDepartments,
   getEmployeePoliciesAdmin,
   explainEmployeePolicyAdmin,
+  getEmployeeBalanceSummary,
 } from '../controllers/employees';
 
 const router = Router();
@@ -20,6 +21,7 @@ router.use(authorize(['ADMIN']));
 router.get('/', getEmployees);
 router.get('/departments', getDepartments);
 router.get('/:id', getEmployee);
+router.get('/:id/balance', getEmployeeBalanceSummary);
 router.get('/:id/policies', getEmployeePoliciesAdmin);
 router.post('/:id/policy-explain', explainEmployeePolicyAdmin);
 router.post('/', createEmployee);

@@ -61,6 +61,7 @@ const createSchema = z.object({
   department: z.string().optional(),
   designation: z.string().optional(),
   dateOfJoining: z.string().optional(),
+  birthday: z.string().optional(),
   probationMonths: z.string().optional(),
   reportingManagerId: z.string().optional(),
   canViewTeamCalendar: z.boolean(),
@@ -671,6 +672,11 @@ export default function EmployeesPage() {
                 {...register("dateOfJoining")}
               />
               <Input
+                label="Date of Birth"
+                type="date"
+                {...register("birthday")}
+              />
+              <Input
                 label="Probation (months)"
                 type="number"
                 min={0}
@@ -775,6 +781,7 @@ export default function EmployeesPage() {
                         <InfoRow icon={Building2} label="Department" value={selectedEmployee.department} />
                         <InfoRow icon={Briefcase} label="Designation" value={selectedEmployee.designation} />
                         <InfoRow icon={Calendar} label="Date of Joining" value={formatDate(selectedEmployee.dateOfJoining)} />
+                        <InfoRow icon={Calendar} label="Date of Birth" value={formatDate(selectedEmployee.birthday)} />
                         <InfoRow icon={Shield} label="Probation Period" value={`${selectedEmployee.probationMonths} months`} />
                         <InfoRow
                           icon={Users}
@@ -929,6 +936,12 @@ function EditInfoForm({
         type="date"
         value={form.dateOfJoining ? form.dateOfJoining.split("T")[0] : ""}
         onChange={(e) => onChange({ ...form, dateOfJoining: e.target.value })}
+      />
+      <Input
+        label="Date of Birth"
+        type="date"
+        value={form.birthday ? (form.birthday as string).split("T")[0] : ""}
+        onChange={(e) => onChange({ ...form, birthday: e.target.value })}
       />
       <Input
         label="Probation (months)"

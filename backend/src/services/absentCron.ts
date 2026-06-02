@@ -9,6 +9,16 @@ async function runAbsentCheck(): Promise<void> {
   console.log(`[absentCron] Running at ${new Date().toISOString()}`);
 
   try {
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'CRON',
+        action: 'CRON_ABSENT_CHECK_START',
+        targetType: 'CRON',
+        targetId: 'ABSENT_CHECK',
+        meta: 'Absent check daily cron started',
+      },
+    }).catch((e) => console.error('Failed to log absent cron start:', e));
+
     // All PENDING leaves whose range includes today
     const pendingLeaves = await prisma.leaveApplication.findMany({
       where: {
@@ -28,6 +38,15 @@ async function runAbsentCheck(): Promise<void> {
 
     if (pendingLeaves.length === 0) {
       console.log('[absentCron] No pending leaves to process.');
+      await prisma.auditLog.create({
+        data: {
+          adminId: 'CRON',
+          action: 'CRON_ABSENT_CHECK_COMPLETE',
+          targetType: 'CRON',
+          targetId: 'ABSENT_CHECK',
+          meta: 'Processed 0/0 leaves',
+        },
+      }).catch((e) => console.error('Failed to log absent cron empty complete:', e));
       return;
     }
 
@@ -83,8 +102,26 @@ async function runAbsentCheck(): Promise<void> {
     }
 
     console.log(`[absentCron] Processed ${processed}/${pendingLeaves.length} leaves.`);
-  } catch (error) {
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'CRON',
+        action: 'CRON_ABSENT_CHECK_COMPLETE',
+        targetType: 'CRON',
+        targetId: 'ABSENT_CHECK',
+        meta: `Processed ${processed}/${pendingLeaves.length} leaves`,
+      },
+    }).catch((e) => console.error('Failed to log absent cron complete:', e));
+  } catch (error: any) {
     console.error('[absentCron] Fatal error:', error);
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'CRON',
+        action: 'CRON_ABSENT_CHECK_FAILED',
+        targetType: 'CRON',
+        targetId: 'ABSENT_CHECK',
+        meta: error?.message || String(error),
+      },
+    }).catch((e) => console.error('Failed to log absent cron error:', e));
   }
 }
 

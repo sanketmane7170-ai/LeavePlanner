@@ -40,14 +40,16 @@ export async function createBackup(type: 'DAILY' | 'MANUAL' = 'DAILY'): Promise<
       prisma.leaveBalance.findMany({
         where: { year: { gte: prevYear }, isArchived: false },
       }),
-      // Leave applications from previous year onwards
+      // Leave applications from previous year onwards (capped to bound JSON blob size)
       prisma.leaveApplication.findMany({
         where: { fromDate: { gte: new Date(`${prevYear}-01-01`) } },
         orderBy: { createdAt: 'desc' },
+        take: 10000,
       }),
       prisma.wfhApplication.findMany({
         where: { date: { gte: new Date(`${prevYear}-01-01`) } },
         orderBy: { createdAt: 'desc' },
+        take: 10000,
       }),
       prisma.publicHoliday.findMany({ orderBy: { date: 'asc' } }),
     ]);

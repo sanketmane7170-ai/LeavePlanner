@@ -28,6 +28,33 @@ const ACTION_CONFIG: Record<string, { label: string; color: string; dot: string 
   UPDATE_SETTINGS:    { label: "Update Settings",   color: "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400",       dot: "bg-amber-500" },
   PROMOTE_ADMIN:      { label: "Promote Admin",      color: "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400",   dot: "bg-indigo-500" },
   DEMOTE_ADMIN:       { label: "Demote Admin",       color: "bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400",   dot: "bg-orange-500" },
+  
+  APPLY_LEAVE:        { label: "Apply Leave",        color: "bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400",             dot: "bg-sky-500" },
+  CANCEL_LEAVE:       { label: "Cancel Leave",       color: "bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400",       dot: "bg-slate-500" },
+  OVERRIDE_ABSENT:    { label: "Override Absent",    color: "bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400",           dot: "bg-cyan-500" },
+  
+  APPLY_WFH:          { label: "Apply WFH",          color: "bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400",           dot: "bg-teal-500" },
+  APPROVE_WFH:        { label: "Approve WFH",        color: "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  REJECT_WFH:         { label: "Reject WFH",         color: "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400",           dot: "bg-rose-500" },
+  
+  EMAIL_SEND_SUCCESS: { label: "Email Sent",         color: "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400",       dot: "bg-green-500" },
+  EMAIL_SEND_FAILED:  { label: "Email Failed",       color: "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",             dot: "bg-red-500" },
+  
+  CRON_ABSENT_CHECK_START:    { label: "Cron: Absent Start", color: "bg-fuchsia-50 dark:bg-fuchsia-900/20 text-fuchsia-600 dark:text-fuchsia-400", dot: "bg-fuchsia-400" },
+  CRON_ABSENT_CHECK_COMPLETE: { label: "Cron: Absent Done",  color: "bg-fuchsia-50 dark:bg-fuchsia-900/20 text-fuchsia-600 dark:text-fuchsia-400", dot: "bg-fuchsia-500" },
+  CRON_ABSENT_CHECK_FAILED:   { label: "Cron: Absent Fail",  color: "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400",           dot: "bg-rose-600" },
+  
+  CRON_BACKUP_START:          { label: "Cron: Backup Start", color: "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400",   dot: "bg-indigo-400" },
+  CRON_BACKUP_SUCCESS:        { label: "Cron: Backup Done",  color: "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400",   dot: "bg-indigo-500" },
+  CRON_BACKUP_FAILED:         { label: "Cron: Backup Fail",  color: "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400",             dot: "bg-red-600" },
+  
+  CRON_MONTHLY_REPORT_START:   { label: "Cron: Report Start", color: "bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400",   dot: "bg-violet-400" },
+  CRON_MONTHLY_REPORT_SUCCESS: { label: "Cron: Report Done",  color: "bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400",   dot: "bg-violet-500" },
+  CRON_MONTHLY_REPORT_FAILED:  { label: "Cron: Report Fail",  color: "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400",           dot: "bg-rose-600" },
+  
+  CRON_BIRTHDAY_CHECK_START:    { label: "Cron: Bday Start",   color: "bg-pink-50 dark:bg-pink-900/20 text-pink-600 dark:text-pink-400",           dot: "bg-pink-400" },
+  CRON_BIRTHDAY_CHECK_COMPLETE: { label: "Cron: Bday Done",    color: "bg-pink-50 dark:bg-pink-900/20 text-pink-600 dark:text-pink-400",           dot: "bg-pink-500" },
+  CRON_BIRTHDAY_CHECK_FAILED:   { label: "Cron: Bday Fail",    color: "bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400",           dot: "bg-rose-600" },
 };
 
 function getActionConfig(action: string) {
@@ -57,6 +84,42 @@ const AVATAR_COLORS = [
   "bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300",
 ];
 
+function renderMeta(metaStr: string | null) {
+  if (!metaStr) return null;
+  try {
+    const data = JSON.parse(metaStr);
+    if (typeof data !== "object" || data === null) {
+      return <span className="text-slate-600 dark:text-slate-300">{metaStr}</span>;
+    }
+
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-xs py-1">
+        {Object.entries(data).map(([key, val]) => {
+          const friendlyKey = key
+            .replace(/([A-Z])/g, " $1")
+            .replace(/^./, (str) => str.toUpperCase());
+          
+          let friendlyVal = "";
+          if (typeof val === "object" && val !== null) {
+            friendlyVal = JSON.stringify(val);
+          } else {
+            friendlyVal = String(val);
+          }
+
+          return (
+            <div key={key} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{friendlyKey}</span>
+              <span className="font-medium text-slate-700 dark:text-slate-200 font-mono break-all leading-relaxed">{friendlyVal}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  } catch {
+    return <span className="text-slate-600 dark:text-slate-300 font-mono text-xs break-all">{metaStr}</span>;
+  }
+}
+
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -65,6 +128,7 @@ export default function AuditLogPage() {
   const totalPages = Math.ceil(total / limit);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchLogs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true);
@@ -154,8 +218,8 @@ export default function AuditLogPage() {
         <>
           {/* Desktop table */}
           <div className="hidden md:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-            <div className="grid grid-cols-[180px_1fr_160px_140px] px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900">
-              {["Time", "Admin", "Action", "Target"].map((h) => (
+            <div className="grid grid-cols-[180px_1fr_160px_140px_32px] px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900">
+              {["Time", "Admin", "Action", "Target", ""].map((h) => (
                 <span key={h} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{h}</span>
               ))}
             </div>
@@ -164,52 +228,70 @@ export default function AuditLogPage() {
                 const cfg = getActionConfig(log.action);
                 const initials = (log.adminName ?? "?").charAt(0).toUpperCase();
                 const avatarColor = adminColorMap[log.adminName] ?? AVATAR_COLORS[0];
+                const isExpanded = expandedId === log.id;
                 return (
-                  <div
-                    key={log.id}
-                    className="grid grid-cols-[180px_1fr_160px_140px] px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors items-center"
-                  >
-                    {/* Time */}
-                    <div>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                        {new Date(log.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-xs text-slate-400">
-                          {new Date(log.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        <span className="text-[10px] text-slate-300 dark:text-slate-600">·</span>
-                        <span className="text-[11px] text-slate-400">{timeAgo(log.createdAt)}</span>
-                      </div>
-                    </div>
-
-                    {/* Admin */}
-                    <div className="flex items-center gap-2.5">
-                      <div className={cn("h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0", avatarColor)}>
-                        {initials}
-                      </div>
+                  <div key={log.id} className="border-b last:border-0 border-slate-100 dark:border-slate-800/60">
+                    <div
+                      onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                      className={cn(
+                        "grid grid-cols-[180px_1fr_160px_140px_32px] px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors items-center cursor-pointer select-none",
+                        isExpanded && "bg-slate-50/40 dark:bg-slate-800/20"
+                      )}
+                    >
+                      {/* Time */}
                       <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white leading-tight">{log.adminName}</p>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <User size={10} className="text-slate-400" />
-                          <span className="text-[11px] text-slate-400 font-mono">{log.adminId.slice(-6)}</span>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          {new Date(log.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs text-slate-400">
+                            {new Date(log.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          <span className="text-[10px] text-slate-300 dark:text-slate-600">·</span>
+                          <span className="text-[11px] text-slate-400">{timeAgo(log.createdAt)}</span>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Action badge */}
-                    <div>
-                      <span className={cn("inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold", cfg.color)}>
-                        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", cfg.dot)} />
-                        {cfg.label}
-                      </span>
-                    </div>
+                      {/* Admin */}
+                      <div className="flex items-center gap-2.5">
+                        <div className={cn("h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0", avatarColor)}>
+                          {initials}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white leading-tight">{log.adminName}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <User size={10} className="text-slate-400" />
+                            <span className="text-[11px] text-slate-400 font-mono">{log.adminId.slice(-6)}</span>
+                          </div>
+                        </div>
+                      </div>
 
-                    {/* Target */}
-                    <div>
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{log.targetType}</p>
-                      <p className="text-[11px] text-slate-400 font-mono mt-0.5">…{log.targetId.slice(-8)}</p>
+                      {/* Action badge */}
+                      <div>
+                        <span className={cn("inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold", cfg.color)}>
+                          <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", cfg.dot)} />
+                          {cfg.label}
+                        </span>
+                      </div>
+
+                      {/* Target */}
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{log.targetType}</p>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">…{log.targetId.slice(-8)}</p>
+                      </div>
+
+                      {/* Chevron */}
+                      <div className="flex justify-end text-slate-450 dark:text-slate-500">
+                        <ChevronRight size={16} className={cn("transition-transform duration-200", isExpanded && "rotate-90")} />
+                      </div>
                     </div>
+                    {isExpanded && log.meta && (
+                      <div className="bg-slate-50/40 dark:bg-slate-900/10 border-t border-slate-100 dark:border-slate-800/80 px-8 py-4">
+                        <div className="border-l-2 border-primary/40 pl-4 py-1">
+                          {renderMeta(log.meta)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -222,8 +304,13 @@ export default function AuditLogPage() {
               const cfg = getActionConfig(log.action);
               const initials = (log.adminName ?? "?").charAt(0).toUpperCase();
               const avatarColor = adminColorMap[log.adminName] ?? AVATAR_COLORS[0];
+              const isExpanded = expandedId === log.id;
               return (
-                <div key={log.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
+                <div
+                  key={log.id}
+                  onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                  className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm cursor-pointer select-none"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       <div className={cn("h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0", avatarColor)}>
@@ -237,13 +324,19 @@ export default function AuditLogPage() {
                         </span>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="text-right shrink-0 flex flex-col items-end">
                       <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
                         {new Date(log.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
                       </p>
                       <p className="text-[11px] text-slate-400 mt-0.5">{timeAgo(log.createdAt)}</p>
+                      <ChevronRight size={14} className={cn("text-slate-400 mt-2 transition-transform duration-200", isExpanded && "rotate-90")} />
                     </div>
                   </div>
+                  {isExpanded && log.meta && (
+                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 pl-1">
+                      {renderMeta(log.meta)}
+                    </div>
+                  )}
                 </div>
               );
             })}

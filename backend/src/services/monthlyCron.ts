@@ -14,12 +14,31 @@ async function runMonthlyReport(): Promise<void> {
   logger.info(`[monthly-cron] Generating report for ${month}/${year}…`);
 
   try {
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'CRON',
+        action: 'CRON_MONTHLY_REPORT_START',
+        targetType: 'CRON',
+        targetId: 'MONTHLY_REPORT',
+        meta: `Generating report for ${month}/${year}`,
+      },
+    }).catch((e) => console.error('Failed to log monthly report start:', e));
+
     // ── 1. Calculate & persist reports ────────────────────────────────────
     const reports = await generateAndSaveAllMonthlyReports(month, year);
     logger.info(`[monthly-cron] Calculated ${reports.length} employee reports.`);
 
     if (reports.length === 0) {
       logger.info('[monthly-cron] No active employees — skipping emails.');
+      await prisma.auditLog.create({
+        data: {
+          adminId: 'CRON',
+          action: 'CRON_MONTHLY_REPORT_SUCCESS',
+          targetType: 'CRON',
+          targetId: 'MONTHLY_REPORT',
+          meta: `No active employees — reports complete for ${month}/${year}`,
+        },
+      }).catch((e) => console.error('Failed to log monthly report success empty:', e));
       return;
     }
 
@@ -41,7 +60,7 @@ async function runMonthlyReport(): Promise<void> {
 
     // ── 3. Generate Excel & send admin summary ────────────────────────────
     const excelBuffer  = await generateExcelBuffer(reports, month, year);
-    const adminUsers   = await prisma.user.findMany({ where: { role: 'ADMIN' } });
+    const adminUsers   = await prisma.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } });
     const adminEmails  = adminUsers.map((u) => u.email).filter(Boolean);
 
     if (adminEmails.length > 0) {
@@ -49,8 +68,26 @@ async function runMonthlyReport(): Promise<void> {
     }
 
     logger.info(`[monthly-cron] Monthly report complete for ${month}/${year}.`);
-  } catch (err) {
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'CRON',
+        action: 'CRON_MONTHLY_REPORT_SUCCESS',
+        targetType: 'CRON',
+        targetId: 'MONTHLY_REPORT',
+        meta: `Reports complete for ${month}/${year}. Calculated ${reports.length} reports.`,
+      },
+    }).catch((e) => console.error('Failed to log monthly report success:', e));
+  } catch (err: any) {
     logger.error('[monthly-cron] Report generation failed:', err);
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'CRON',
+        action: 'CRON_MONTHLY_REPORT_FAILED',
+        targetType: 'CRON',
+        targetId: 'MONTHLY_REPORT',
+        meta: err?.message || String(err),
+      },
+    }).catch((e) => console.error('Failed to log monthly report failure:', e));
   }
 }
 

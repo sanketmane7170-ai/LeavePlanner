@@ -82,6 +82,9 @@ export function isWorkingDay(
  * Skips non-working days and public holidays.
  * Returns 0.5 for half-day requests.
  */
+// Guard against absurd ranges that would cause runaway loops (DoS protection)
+const MAX_RANGE_DAYS = 400;
+
 export function calculateLeaveDays(
   fromDate: Date,
   toDate: Date,
@@ -90,6 +93,11 @@ export function calculateLeaveDays(
   isHalfDay = false
 ): number {
   if (isHalfDay) return 0.5;
+
+  const rangeDays = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (rangeDays > MAX_RANGE_DAYS) {
+    throw new Error(`Date range too large (${rangeDays} days). Maximum is ${MAX_RANGE_DAYS} days.`);
+  }
 
   let count = 0;
   const current = new Date(fromDate);
@@ -116,6 +124,11 @@ export function getWorkingDatesInRange(
   schedule: WorkingSchedule | null,
   holidays: Date[]
 ): Date[] {
+  const rangeDays = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (rangeDays > MAX_RANGE_DAYS) {
+    throw new Error(`Date range too large (${rangeDays} days). Maximum is ${MAX_RANGE_DAYS} days.`);
+  }
+
   const result: Date[] = [];
   const current = new Date(fromDate);
   current.setHours(0, 0, 0, 0);

@@ -8,6 +8,10 @@ import {
   explainPolicy,
   getMonthlyCalendar,
 } from '../controllers/employeePortal';
+import {
+  getEmployeeAnnouncements,
+  dismissAnnouncement,
+} from '../controllers/announcements';
 
 const router = Router();
 
@@ -19,5 +23,8 @@ router.get('/profile', getEmployeeProfile);
 router.get('/my-policies', getMyPolicies);
 router.post('/policy-explain', explainPolicy);
 router.get('/monthly-calendar', getMonthlyCalendar);
+
+router.get('/announcements', getEmployeeAnnouncements);
+router.post('/announcements/:id/dismiss', dismissAnnouncement);
 
 export default router;

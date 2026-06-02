@@ -229,3 +229,19 @@ export interface PaginatedResponse<T> {
   limit: number;
   totalPages: number;
 }
+
+export type AnnouncementPriority = "HIGH" | "MEDIUM" | "LOW";
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+  scheduledAt?: string;
+  expiresAt?: string;
+  isActive: boolean;
+  isBirthday: boolean;
+  targetEmployeeId?: string;
+  createdAt: string;
+  updatedAt: string;
+}

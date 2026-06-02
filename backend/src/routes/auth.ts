@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import { signToken } from '../lib/auth';
 import { authenticate } from '../middleware/authenticate';
 import type { AuthRequest } from '../middleware/authenticate';
@@ -36,8 +39,8 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     res.cookie('jwt', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: 'strict', // prevent CSRF token leakage via cross-site requests
+      maxAge: 24 * 60 * 60 * 1000, // 1 day — matches JWT expiry
     });
 
     return res.json({
@@ -55,7 +58,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -94,7 +97,7 @@ router.patch('/change-password', authenticate, async (req: AuthRequest, res: Res
 
     return res.json({ message: 'Password changed successfully' });
   } catch (error) {
-    console.error('change-password error:', error);
+    logger.error('change-password error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -129,7 +132,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
       },
     });
   } catch (error) {
-    console.error('Me error:', error);
+    logger.error('Me error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -143,7 +146,27 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
 
-router.post('/forgot-password', async (req: Request, res: Response): Promise<any> => {
+// 5 OTP requests per email per 15 minutes
+const otpRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => (req.body?.email as string | undefined) ?? ipKeyGenerator(req.ip ?? ''),
+  message: { message: 'Too many password reset requests. Please wait 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 10 OTP verify attempts per 15 minutes (prevents brute force of 6-digit code)
+const otpVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req.body?.email as string | undefined) ?? ipKeyGenerator(req.ip ?? ''),
+  message: { message: 'Too many attempts. Please request a new OTP.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post('/forgot-password', otpRequestLimiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: 'Email is required' });
@@ -154,7 +177,7 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<any
       return res.json({ message: 'If an account exists, an OTP has been sent.' });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+    const otp = randomInt(100000, 1000000).toString(); // cryptographically secure 6-digit OTP
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
     await prisma.passwordResetToken.create({
@@ -180,12 +203,12 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<any
 
     return res.json({ message: 'If an account exists, an OTP has been sent.' });
   } catch (error) {
-    console.error('forgot-password error:', error);
+    logger.error('forgot-password error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-router.post('/reset-password', async (req: Request, res: Response): Promise<any> => {
+router.post('/reset-password', otpVerifyLimiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, otp, newPassword } = req.body;
     if (!email || !otp || !newPassword) {
@@ -219,7 +242,7 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<any>
 
     return res.json({ message: 'Password has been reset successfully. You can now log in.' });
   } catch (error) {
-    console.error('reset-password error:', error);
+    logger.error('reset-password error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

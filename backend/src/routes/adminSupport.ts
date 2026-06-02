@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import { authenticate, requireRole } from '../middleware/authenticate';
 import type { AuthRequest } from '../middleware/authenticate';
 
@@ -18,7 +19,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<any> => {
     });
     return res.json(tickets);
   } catch (error) {
-    console.error('Fetch support tickets error:', error);
+    logger.error('Fetch support tickets error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -38,7 +39,7 @@ router.patch('/:id/resolve', async (req: AuthRequest, res: Response): Promise<an
 
     return res.json({ message: 'Ticket resolved successfully', ticket: updatedTicket });
   } catch (error) {
-    console.error('Resolve support ticket error:', error);
+    logger.error('Resolve support ticket error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

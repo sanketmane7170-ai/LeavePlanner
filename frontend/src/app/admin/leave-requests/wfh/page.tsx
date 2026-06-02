@@ -8,8 +8,9 @@ import {
   CheckCircle2,
   XCircle,
   ChevronLeft,
-  ChevronRight, 
+  ChevronRight,
   Home,
+  CalendarDays,
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatDate, wfhStatusVariant } from "@/lib/utils";
@@ -28,6 +29,12 @@ import { WeaveSpinner } from "@/components/ui/weave-spinner";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+interface EmployeeBalanceSummary {
+  year: number;
+  leaveBalance: { totalDays: number; usedDays: number; remainingDays: number } | null;
+  wfhBalance: { allowedDays: number; usedDays: number; pendingDays: number; remainingDays: number } | null;
+}
+
 interface WfhWithEmployee extends WfhApplication {
   employee: {
     id: string;
@@ -86,6 +93,7 @@ export default function WfhRequestsPage() {
   const [detailWfh, setDetailWfh] = useState<WfhWithEmployee | null>(null);
   const [rejectComment, setRejectComment] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [employeeBalance, setEmployeeBalance] = useState<EmployeeBalanceSummary | null>(null);
 
   const fetchWfh = useCallback(async () => {
     setLoading(true);
@@ -111,6 +119,15 @@ export default function WfhRequestsPage() {
 
   useEffect(() => { fetchWfh(); }, [fetchWfh]);
   useEffect(() => { setPage(1); }, [year, statusFilter, search, dateFrom, dateTo]);
+
+  // Fetch employee balance when WFH detail sheet opens
+  useEffect(() => {
+    if (!detailWfh) { setEmployeeBalance(null); return; }
+    const yr = new Date(detailWfh.date).getFullYear();
+    api.get(`/admin/employees/${detailWfh.employee.id}/balance?year=${yr}`)
+      .then((r) => setEmployeeBalance(r.data))
+      .catch(() => setEmployeeBalance(null));
+  }, [detailWfh]);
 
   const handleApprove = async (wfh: WfhWithEmployee) => {
     setActionLoading(true);
@@ -387,6 +404,49 @@ export default function WfhRequestsPage() {
                   <div className="mt-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
                     <p className="text-xs text-slate-500 mb-1">Admin Comment</p>
                     <p className="text-sm text-slate-700 dark:text-slate-300">{detailWfh.adminComment}</p>
+                  </div>
+                )}
+
+                {/* Employee balance summary */}
+                {employeeBalance && (
+                  <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2.5">
+                      Current Balance ({employeeBalance.year})
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {employeeBalance.leaveBalance && (
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+                            <CalendarDays size={13} className="text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Leave</p>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {employeeBalance.leaveBalance.remainingDays}
+                              <span className="text-xs font-normal text-slate-400 ml-0.5">
+                                / {employeeBalance.leaveBalance.totalDays}d
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {employeeBalance.wfhBalance && (
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center shrink-0">
+                            <Home size={13} className="text-teal-600 dark:text-teal-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">WFH</p>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {employeeBalance.wfhBalance.remainingDays}
+                              <span className="text-xs font-normal text-slate-400 ml-0.5">
+                                / {employeeBalance.wfhBalance.allowedDays}d
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

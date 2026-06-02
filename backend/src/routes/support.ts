@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
 
     return res.status(201).json({ message: 'Your message has been sent to the Admin successfully.' });
   } catch (error) {
-    console.error('Submit support ticket error:', error);
+    logger.error('Submit support ticket error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

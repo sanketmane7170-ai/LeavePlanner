@@ -235,6 +235,10 @@ model LeaveApplication {
   noticeViolation Boolean      @default(false)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+
+  @@index([employeeId, status])
+  @@index([employeeId, fromDate])
+  @@index([status, fromDate])
 }
 
 model WfhApplication {
@@ -251,6 +255,10 @@ model WfhApplication {
   adminComment String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  @@index([employeeId, status])
+  @@index([employeeId, date])
+  @@index([status, date])
 }
 
 model LeaveBalance {
@@ -280,6 +288,8 @@ model AbsentRecord {
   overrideById String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([employeeId, date])
 }
 
 model AuditLog {
@@ -290,6 +300,8 @@ model AuditLog {
   targetId   String
   meta       String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model OrgSettings {
@@ -321,6 +333,9 @@ model Notification {
   link      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
 }
 
 model EmailTemplate {
@@ -364,6 +379,8 @@ model DataBackup {
   leaveCount    Int      @default(0)
   sizeBytes     Int?
   data          Json
+
+  @@index([type, createdAt])
 }
 
 model PasswordResetToken {
@@ -374,6 +391,7 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@index([email])
+  @@index([expiresAt])
 }
 
 enum TicketStatus {

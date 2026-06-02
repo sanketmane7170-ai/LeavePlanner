@@ -1,17 +1,17 @@
 import type { Response } from 'express';
 import bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { prisma } from '../lib/prisma';
 import type { AuthRequest } from '../middleware/authenticate';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService';
 import { createNotification } from '../services/notificationService';
+import { logger } from '../lib/logger';
 
-function generatePassword(length = 10): string {
+function generatePassword(length = 12): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$';
-  let password = '';
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
+  // Use cryptographically secure random bytes — Math.random() is not safe for credentials
+  const bytes = randomBytes(length);
+  return Array.from(bytes).map((b) => chars[b % chars.length]).join('');
 }
 
 async function generateEmployeeId(): Promise<string> {
@@ -77,7 +77,7 @@ export const getEmployees = async (req: AuthRequest, res: Response): Promise<any
       totalPages: Math.ceil(total / limit),
     });
   } catch (error) {
-    console.error('getEmployees error:', error);
+    logger.error('getEmployees error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -104,7 +104,7 @@ export const getEmployee = async (req: AuthRequest, res: Response): Promise<any>
 
     return res.json(employee);
   } catch (error) {
-    console.error('getEmployee error:', error);
+    logger.error('getEmployee error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -119,6 +119,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       department,
       designation,
       dateOfJoining,
+      birthday,
       probationMonths = 6,
       reportingManagerId,
       canViewTeamCalendar = false,
@@ -130,6 +131,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       department?: string;
       designation?: string;
       dateOfJoining?: string;
+      birthday?: string;
       probationMonths?: number;
       reportingManagerId?: string;
       canViewTeamCalendar?: boolean;
@@ -163,6 +165,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
             department: department || undefined,
             designation: designation || undefined,
             dateOfJoining: dateOfJoining ? new Date(dateOfJoining) : undefined,
+            birthday: birthday ? new Date(birthday) : undefined,
             probationMonths: Number(probationMonths),
             reportingManagerId: reportingManagerId || undefined,
             canViewTeamCalendar: Boolean(canViewTeamCalendar),
@@ -175,7 +178,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
     try {
       await sendWelcomeEmail(email, fullName, employeeId, tempPassword);
     } catch (emailErr) {
-      console.error('Welcome email failed:', emailErr);
+      logger.error('Welcome email failed:', emailErr);
     }
 
     return res.status(201).json({
@@ -183,7 +186,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       employee: user.employee,
     });
   } catch (error) {
-    console.error('createEmployee error:', error);
+    logger.error('createEmployee error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -198,6 +201,7 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
       department,
       designation,
       dateOfJoining,
+      birthday,
       probationMonths,
       reportingManagerId,
       isActive,
@@ -224,6 +228,9 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
         ...(designation !== undefined && { designation: designation || null }),
         ...(dateOfJoining !== undefined && {
           dateOfJoining: dateOfJoining ? new Date(String(dateOfJoining)) : null,
+        }),
+        ...(birthday !== undefined && {
+          birthday: birthday ? new Date(String(birthday)) : null,
         }),
         ...(probationMonths !== undefined && { probationMonths: Number(probationMonths) }),
         ...(reportingManagerId !== undefined && {
@@ -290,7 +297,7 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
 
     return res.json({ message: 'Employee updated successfully', employee: updated });
   } catch (error) {
-    console.error('updateEmployee error:', error);
+    logger.error('updateEmployee error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -322,13 +329,13 @@ export const resetPassword = async (req: AuthRequest, res: Response): Promise<an
       try {
         await sendPasswordResetEmail(userEmail, employee.fullName, tempPassword);
       } catch (emailErr) {
-        console.error('Password reset email failed:', emailErr);
+        logger.error('Password reset email failed:', emailErr);
       }
     }
 
     return res.json({ message: 'Password reset successfully. Email sent to employee.' });
   } catch (error) {
-    console.error('resetPassword error:', error);
+    logger.error('resetPassword error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -344,7 +351,7 @@ export const getDepartments = async (req: AuthRequest, res: Response): Promise<a
 
     return res.json(departments.map((e) => e.department).filter(Boolean));
   } catch (error) {
-    console.error('getDepartments error:', error);
+    logger.error('getDepartments error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -396,7 +403,7 @@ export const getEmployeePoliciesAdmin = async (req: AuthRequest, res: Response):
       wfhUsedThisMonth: wfhUsed._sum.totalDays ?? 0,
     });
   } catch (error) {
-    console.error('getEmployeePoliciesAdmin error:', error);
+    logger.error('getEmployeePoliciesAdmin error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -485,7 +492,59 @@ ${wp ? `
 
     return res.json({ explanation, policyContext });
   } catch (error: any) {
-    console.error('explainEmployeePolicyAdmin error:', error);
+    logger.error('explainEmployeePolicyAdmin error:', error);
     return res.status(500).json({ message: error?.message ?? 'Internal server error' });
+  }
+};
+
+// ── GET /api/admin/employees/:id/balance ──────────────────────────────────────
+export const getEmployeeBalanceSummary = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id   = String(req.params['id']);
+    const year = parseInt((req.query.year as string) || '') || new Date().getFullYear();
+
+    const employee = await prisma.employee.findUnique({
+      where: { id },
+      include: {
+        wfhPolicy:           { select: { daysAllowed: true, name: true } },
+        wfhPolicyExceptions: { select: { policyId: true, overrideDays: true } },
+      },
+    });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    // ── Leave balance ─────────────────────────────────────────────────────────
+    const leaveBalance = await prisma.leaveBalance.findFirst({
+      where: { employeeId: id, year, isArchived: false },
+    });
+
+    // ── WFH balance (yearly) ──────────────────────────────────────────────────
+    const yearStart = new Date(year, 0, 1, 0, 0, 0, 0);
+    const yearEnd   = new Date(year, 11, 31, 23, 59, 59, 999);
+    const wfhApps   = await prisma.wfhApplication.findMany({
+      where: {
+        employeeId: id,
+        status: { in: ['APPROVED', 'PENDING'] },
+        date: { gte: yearStart, lte: yearEnd },
+      },
+      select: { status: true, totalDays: true },
+    });
+
+    const wfhUsed    = wfhApps.filter((a) => a.status === 'APPROVED').reduce((s, a) => s + a.totalDays, 0);
+    const wfhPending = wfhApps.filter((a) => a.status === 'PENDING').reduce((s, a) => s + a.totalDays, 0);
+    const exception  = employee.wfhPolicyExceptions?.find((ex) => ex.policyId === employee.wfhPolicyId);
+    const wfhAllowed = exception ? exception.overrideDays : (employee.wfhPolicy?.daysAllowed ?? 0);
+
+    return res.json({
+      year,
+      leaveBalance: leaveBalance
+        ? { totalDays: leaveBalance.totalDays, usedDays: leaveBalance.usedDays, remainingDays: leaveBalance.remainingDays }
+        : null,
+      wfhBalance: employee.wfhPolicy
+        ? { allowedDays: wfhAllowed, usedDays: wfhUsed, pendingDays: wfhPending, remainingDays: Math.max(0, wfhAllowed - wfhUsed - wfhPending) }
+        : null,
+    });
+  } catch (error) {
+    logger.error('getEmployeeBalanceSummary error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 };

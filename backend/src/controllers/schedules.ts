@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 
 const VALID_SATURDAY_RULES = [
@@ -20,7 +21,7 @@ export const getSchedule = async (req: AuthRequest, res: Response): Promise<any>
     const schedule = await prisma.workingSchedule.findUnique({ where: { employeeId } });
     return res.json(schedule ?? null);
   } catch (error) {
-    console.error('getSchedule error:', error);
+    logger.error('getSchedule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -69,7 +70,7 @@ export const upsertSchedule = async (req: AuthRequest, res: Response): Promise<a
 
     return res.json({ message: 'Schedule saved', schedule });
   } catch (error) {
-    console.error('upsertSchedule error:', error);
+    logger.error('upsertSchedule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

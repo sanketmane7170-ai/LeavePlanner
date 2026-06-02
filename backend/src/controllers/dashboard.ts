@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -71,7 +72,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
       upcomingLeaves,
     });
   } catch (error) {
-    console.error('getDashboardStats error:', error);
+    logger.error('getDashboardStats error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -99,7 +100,7 @@ export const getMonthlyReport = async (req: AuthRequest, res: Response): Promise
 
     return res.json(monthly);
   } catch (error) {
-    console.error('getMonthlyReport error:', error);
+    logger.error('getMonthlyReport error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -131,7 +132,7 @@ export const getTypeReport = async (req: AuthRequest, res: Response): Promise<an
 
     return res.json(result);
   } catch (error) {
-    console.error('getTypeReport error:', error);
+    logger.error('getTypeReport error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

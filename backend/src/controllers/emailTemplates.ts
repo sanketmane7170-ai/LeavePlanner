@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 import { EMAIL_TEMPLATE_DEFAULTS } from '../data/emailTemplateDefaults';
 import { clearTemplateCache } from '../services/emailService';
@@ -17,7 +18,7 @@ export const listEmailTemplates = async (_req: AuthRequest, res: Response): Prom
     });
     return res.json(templates);
   } catch (error) {
-    console.error('listEmailTemplates error:', error);
+    logger.error('listEmailTemplates error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -30,7 +31,7 @@ export const getEmailTemplate = async (req: AuthRequest, res: Response): Promise
     if (!template) return res.status(404).json({ message: 'Template not found' });
     return res.json(template);
   } catch (error) {
-    console.error('getEmailTemplate error:', error);
+    logger.error('getEmailTemplate error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -64,7 +65,7 @@ export const updateEmailTemplate = async (req: AuthRequest, res: Response): Prom
 
     return res.json({ message: 'Template updated', template: updated });
   } catch (error) {
-    console.error('updateEmailTemplate error:', error);
+    logger.error('updateEmailTemplate error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -85,7 +86,7 @@ export const resetEmailTemplate = async (req: AuthRequest, res: Response): Promi
 
     return res.json({ message: 'Template reset to default', template: updated });
   } catch (error) {
-    console.error('resetEmailTemplate error:', error);
+    logger.error('resetEmailTemplate error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -102,7 +103,7 @@ export const resetAllEmailTemplates = async (_req: AuthRequest, res: Response): 
     clearTemplateCache();
     return res.json({ message: 'All templates reset to defaults' });
   } catch (error) {
-    console.error('resetAllEmailTemplates error:', error);
+    logger.error('resetAllEmailTemplates error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -131,7 +132,7 @@ export const seedEmailTemplates = async (_req: AuthRequest, res: Response): Prom
     clearTemplateCache();
     return res.json({ message: `${seeded} templates seeded`, total: seeded });
   } catch (error) {
-    console.error('seedEmailTemplates error:', error);
+    logger.error('seedEmailTemplates error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

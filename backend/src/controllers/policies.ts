@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 
 async function verifyAdminPassword(userId: string, password?: string): Promise<boolean> {
@@ -29,7 +30,7 @@ export const getLeavePolicies = async (req: AuthRequest, res: Response): Promise
     });
     return res.json(policies);
   } catch (error) {
-    console.error('getLeavePolicies error:', error);
+    logger.error('getLeavePolicies error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -84,7 +85,7 @@ export const createLeavePolicy = async (req: AuthRequest, res: Response): Promis
 
     return res.status(201).json(policy);
   } catch (error) {
-    console.error('createLeavePolicy error:', error);
+    logger.error('createLeavePolicy error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -137,7 +138,7 @@ export const updateLeavePolicy = async (req: AuthRequest, res: Response): Promis
 
     return res.json(updated);
   } catch (error) {
-    console.error('updateLeavePolicy error:', error);
+    logger.error('updateLeavePolicy error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -161,7 +162,7 @@ export const deleteLeavePolicy = async (req: AuthRequest, res: Response): Promis
     await prisma.leavePolicy.delete({ where: { id } });
     return res.json({ message: 'Leave policy deleted' });
   } catch (error) {
-    console.error('deleteLeavePolicy error:', error);
+    logger.error('deleteLeavePolicy error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -201,7 +202,7 @@ export const addPolicyException = async (req: AuthRequest, res: Response): Promi
 
     return res.status(201).json(exception);
   } catch (error) {
-    console.error('addPolicyException error:', error);
+    logger.error('addPolicyException error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -212,7 +213,7 @@ export const deletePolicyException = async (req: AuthRequest, res: Response): Pr
     await prisma.policyException.delete({ where: { id } });
     return res.json({ message: 'Exception removed' });
   } catch (error) {
-    console.error('deletePolicyException error:', error);
+    logger.error('deletePolicyException error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -251,7 +252,7 @@ export const addPolicyRule = async (req: AuthRequest, res: Response): Promise<an
 
     return res.status(201).json(rule);
   } catch (error) {
-    console.error('addPolicyRule error:', error);
+    logger.error('addPolicyRule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -283,7 +284,7 @@ export const updatePolicyRule = async (req: AuthRequest, res: Response): Promise
 
     return res.json(updated);
   } catch (error) {
-    console.error('updatePolicyRule error:', error);
+    logger.error('updatePolicyRule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -294,7 +295,7 @@ export const deletePolicyRule = async (req: AuthRequest, res: Response): Promise
     await prisma.policyRule.delete({ where: { id } });
     return res.json({ message: 'Rule deleted' });
   } catch (error) {
-    console.error('deletePolicyRule error:', error);
+    logger.error('deletePolicyRule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -318,7 +319,7 @@ export const getWfhPolicies = async (req: AuthRequest, res: Response): Promise<a
     });
     return res.json(policies);
   } catch (error) {
-    console.error('getWfhPolicies error:', error);
+    logger.error('getWfhPolicies error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -366,7 +367,7 @@ export const createWfhPolicy = async (req: AuthRequest, res: Response): Promise<
 
     return res.status(201).json(policy);
   } catch (error) {
-    console.error('createWfhPolicy error:', error);
+    logger.error('createWfhPolicy error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -406,7 +407,7 @@ export const updateWfhPolicy = async (req: AuthRequest, res: Response): Promise<
 
     return res.json(updated);
   } catch (error) {
-    console.error('updateWfhPolicy error:', error);
+    logger.error('updateWfhPolicy error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -430,7 +431,7 @@ export const deleteWfhPolicy = async (req: AuthRequest, res: Response): Promise<
     await prisma.wfhPolicy.delete({ where: { id } });
     return res.json({ message: 'WFH policy deleted' });
   } catch (error) {
-    console.error('deleteWfhPolicy error:', error);
+    logger.error('deleteWfhPolicy error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -472,7 +473,7 @@ export const addWfhPolicyException = async (req: AuthRequest, res: Response): Pr
 
     return res.status(201).json(exception);
   } catch (error) {
-    console.error('addWfhPolicyException error:', error);
+    logger.error('addWfhPolicyException error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -483,7 +484,7 @@ export const deleteWfhPolicyException = async (req: AuthRequest, res: Response):
     await prisma.wfhPolicyException.delete({ where: { id } });
     return res.json({ message: 'Exception removed' });
   } catch (error) {
-    console.error('deleteWfhPolicyException error:', error);
+    logger.error('deleteWfhPolicyException error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -521,7 +522,7 @@ export const addWfhPolicyRule = async (req: AuthRequest, res: Response): Promise
 
     return res.status(201).json(rule);
   } catch (error) {
-    console.error('addWfhPolicyRule error:', error);
+    logger.error('addWfhPolicyRule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -554,7 +555,7 @@ export const updateWfhPolicyRule = async (req: AuthRequest, res: Response): Prom
 
     return res.json(updated);
   } catch (error) {
-    console.error('updateWfhPolicyRule error:', error);
+    logger.error('updateWfhPolicyRule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -565,7 +566,7 @@ export const deleteWfhPolicyRule = async (req: AuthRequest, res: Response): Prom
     await prisma.wfhPolicyRule.delete({ where: { id } });
     return res.json({ message: 'Rule deleted' });
   } catch (error) {
-    console.error('deleteWfhPolicyRule error:', error);
+    logger.error('deleteWfhPolicyRule error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

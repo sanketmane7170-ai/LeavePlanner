@@ -26,6 +26,12 @@ export function validateEnv(): void {
     if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
       logger.warn('SMTP credentials not fully configured — emails will not be sent in production.');
     }
+    if (!process.env.TZ) {
+      logger.warn(
+        'TZ is not set. Date/working-day calculations will use the server OS timezone. ' +
+        'Set TZ=Asia/Kolkata in production to guarantee correct IST-based calculations.'
+      );
+    }
   }
 
   logger.info('Environment validation passed.');

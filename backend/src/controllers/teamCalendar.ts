@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 import { startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
@@ -74,7 +75,7 @@ export const getTeamCalendarLeaves = async (req: AuthRequest, res: Response): Pr
 
     return res.json(sanitizedLeaves);
   } catch (error) {
-    console.error('getTeamCalendarLeaves error:', error);
+    logger.error('getTeamCalendarLeaves error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

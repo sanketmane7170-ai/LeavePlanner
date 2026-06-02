@@ -17,6 +17,7 @@ import {
   ChevronRight,
   LifeBuoy,
   BarChart2,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,7 @@ const adminNav: NavItem[] = [
     ]
   },
   { href: "/admin/support",       label: "Support",       icon: LifeBuoy        },
+  { href: "/admin/announcements", label: "Announcements", icon: Megaphone       },
   { 
     href: "/admin/settings",      
     label: "Settings",      

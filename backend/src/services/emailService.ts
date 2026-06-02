@@ -90,7 +90,29 @@ async function send(to: string | string[], templateKey: string, vars: Record<str
   const html    = buildHtml(body);
   const toAddr  = Array.isArray(to) ? to.join(', ') : to;
 
-  await transporter.sendMail({ from: FROM, to: toAddr, subject, html });
+  try {
+    await transporter.sendMail({ from: FROM, to: toAddr, subject, html });
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'SYSTEM',
+        action: 'EMAIL_SEND_SUCCESS',
+        targetType: 'EMAIL',
+        targetId: typeof toAddr === 'string' ? toAddr.slice(0, 100) : 'Multiple Recipients',
+        meta: JSON.stringify({ templateKey, subject }),
+      },
+    }).catch(e => console.error('Failed to log email success to auditLog:', e));
+  } catch (err: any) {
+    await prisma.auditLog.create({
+      data: {
+        adminId: 'SYSTEM',
+        action: 'EMAIL_SEND_FAILED',
+        targetType: 'EMAIL',
+        targetId: typeof toAddr === 'string' ? toAddr.slice(0, 100) : 'Multiple Recipients',
+        meta: JSON.stringify({ templateKey, subject, error: err?.message || String(err) }),
+      },
+    }).catch(e => console.error('Failed to log email failure to auditLog:', e));
+    throw err;
+  }
 }
 
 // ── Shared value helpers ──────────────────────────────────────────────────────

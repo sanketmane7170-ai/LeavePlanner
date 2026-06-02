@@ -1,52 +1,12 @@
 import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
 import { sendLeaveStatusEmail, sendAdminImportedLeaveEmail } from '../services/emailService';
 import { calculateProRatedDays } from '../services/leaveCalculator';
 import { calculateLeaveDays } from '../services/leaveCalculator';
 import { createNotification } from '../services/notificationService';
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-async function deductBalance(
-  employeeId: string,
-  leaveType: string,
-  year: number,
-  days: number
-): Promise<void> {
-  const balance = await prisma.leaveBalance.findFirst({
-    where: { employeeId, leaveType: leaveType as any, year, isArchived: false },
-  });
-  if (balance) {
-    await prisma.leaveBalance.update({
-      where: { id: balance.id },
-      data: {
-        usedDays: { increment: days },
-        remainingDays: { decrement: days },
-      },
-    });
-  }
-}
-
-async function restoreBalance(
-  employeeId: string,
-  leaveType: string,
-  year: number,
-  days: number
-): Promise<void> {
-  const balance = await prisma.leaveBalance.findFirst({
-    where: { employeeId, leaveType: leaveType as any, year, isArchived: false },
-  });
-  if (balance) {
-    await prisma.leaveBalance.update({
-      where: { id: balance.id },
-      data: {
-        usedDays: { decrement: days },
-        remainingDays: { increment: days },
-      },
-    });
-  }
-}
 
 // ── GET /api/admin/leaves ────────────────────────────────────────────────────
 export const getAdminLeaves = async (req: AuthRequest, res: Response): Promise<any> => {
@@ -119,7 +79,7 @@ export const getAdminLeaves = async (req: AuthRequest, res: Response): Promise<a
       totalPages: Math.ceil(total / limitNum),
     });
   } catch (error) {
-    console.error('getAdminLeaves error:', error);
+    logger.error('getAdminLeaves error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -157,21 +117,44 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<any
       }
     }
 
-    await prisma.leaveApplication.update({
-      where: { id },
-      data: { status: 'APPROVED' },
+    // Atomic: approve + deduct balance must succeed or fail together
+    await prisma.$transaction(async (tx) => {
+      await tx.leaveApplication.update({ where: { id }, data: { status: 'APPROVED' } });
+      if (!leave.isUnpaid) {
+        const balance = await tx.leaveBalance.findFirst({
+          where: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false },
+        });
+        if (balance) {
+          await tx.leaveBalance.update({
+            where: { id: balance.id },
+            data: { usedDays: { increment: leave.totalDays }, remainingDays: { decrement: leave.totalDays } },
+          });
+        }
+      }
     });
 
-    if (!leave.isUnpaid) {
-      await deductBalance(leave.employeeId, balanceType, year, leave.totalDays);
-    }
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        action: 'APPROVE_LEAVE',
+        targetType: 'LEAVE',
+        targetId: leave.id,
+        meta: JSON.stringify({
+          employeeName: leave.employee.fullName,
+          leaveType: leave.leaveType,
+          fromDate: leave.fromDate.toISOString().split('T')[0],
+          toDate: leave.toDate.toISOString().split('T')[0],
+          totalDays: leave.totalDays,
+        }),
+      },
+    }).catch((e) => logger.error('Failed to log approveLeave to auditLog:', e));
 
     sendLeaveStatusEmail(
       (leave.employee as any).user?.email ?? '',
       leave.employee.fullName,
       { leaveType: leave.leaveType, fromDate: leave.fromDate.toLocaleDateString('en-IN'), toDate: leave.toDate.toLocaleDateString('en-IN'), isHalfDay: leave.isHalfDay, halfDaySlot: leave.halfDaySlot, totalDays: leave.totalDays },
       'APPROVED'
-    ).catch((e) => console.error('[email] sendLeaveStatusEmail APPROVED failed:', e));
+    ).catch((e) => logger.error('[email] sendLeaveStatusEmail APPROVED failed:', e));
 
     // Notify employee
     await createNotification(
@@ -183,7 +166,7 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<any
 
     return res.json({ message: 'Leave approved successfully.' });
   } catch (error) {
-    console.error('approveLeave error:', error);
+    logger.error('approveLeave error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -215,13 +198,30 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<any>
       data: { status: 'REJECTED', adminComment: comment.trim() },
     });
 
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        action: 'REJECT_LEAVE',
+        targetType: 'LEAVE',
+        targetId: leave.id,
+        meta: JSON.stringify({
+          employeeName: leave.employee.fullName,
+          leaveType: leave.leaveType,
+          fromDate: leave.fromDate.toISOString().split('T')[0],
+          toDate: leave.toDate.toISOString().split('T')[0],
+          totalDays: leave.totalDays,
+          comment: comment.trim(),
+        }),
+      },
+    }).catch((e) => logger.error('Failed to log rejectLeave to auditLog:', e));
+
     sendLeaveStatusEmail(
       (leave.employee as any).user?.email ?? '',
       leave.employee.fullName,
       { leaveType: leave.leaveType, fromDate: leave.fromDate.toLocaleDateString('en-IN'), toDate: leave.toDate.toLocaleDateString('en-IN'), isHalfDay: leave.isHalfDay, halfDaySlot: leave.halfDaySlot, totalDays: leave.totalDays },
       'REJECTED',
       comment.trim()
-    ).catch((e) => console.error('[email] sendLeaveStatusEmail REJECTED failed:', e));
+    ).catch((e) => logger.error('[email] sendLeaveStatusEmail REJECTED failed:', e));
 
     // Notify employee
     await createNotification(
@@ -233,7 +233,7 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<any>
 
     return res.json({ message: 'Leave rejected.' });
   } catch (error) {
-    console.error('rejectLeave error:', error);
+    logger.error('rejectLeave error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -275,10 +275,38 @@ export const bulkApproveLeaves = async (req: AuthRequest, res: Response): Promis
           }
         }
 
-        await prisma.leaveApplication.update({ where: { id }, data: { status: 'APPROVED' } });
-        if (!leave.isUnpaid) {
-          await deductBalance(leave.employeeId, balanceType, year, leave.totalDays);
-        }
+        // Atomic: approve + deduct balance must succeed or fail together
+        await prisma.$transaction(async (tx) => {
+          await tx.leaveApplication.update({ where: { id }, data: { status: 'APPROVED' } });
+          if (!leave.isUnpaid) {
+            const balance = await tx.leaveBalance.findFirst({
+              where: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false },
+            });
+            if (balance) {
+              await tx.leaveBalance.update({
+                where: { id: balance.id },
+                data: { usedDays: { increment: leave.totalDays }, remainingDays: { decrement: leave.totalDays } },
+              });
+            }
+          }
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            adminId: req.user!.userId,
+            action: 'APPROVE_LEAVE',
+            targetType: 'LEAVE',
+            targetId: leave.id,
+            meta: JSON.stringify({
+              employeeName: leave.employee.fullName,
+              leaveType: leave.leaveType,
+              fromDate: leave.fromDate.toISOString().split('T')[0],
+              toDate: leave.toDate.toISOString().split('T')[0],
+              totalDays: leave.totalDays,
+              bulk: true,
+            }),
+          },
+        }).catch((e) => logger.error('Failed to log approveLeave (bulk) to auditLog:', e));
 
         sendLeaveStatusEmail(
           (leave.employee as any).user?.email ?? '',
@@ -308,7 +336,7 @@ export const bulkApproveLeaves = async (req: AuthRequest, res: Response): Promis
       results,
     });
   } catch (error) {
-    console.error('bulkApproveLeaves error:', error);
+    logger.error('bulkApproveLeaves error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -345,6 +373,24 @@ export const bulkRejectLeaves = async (req: AuthRequest, res: Response): Promise
           data: { status: 'REJECTED', adminComment: comment.trim() },
         });
 
+        await prisma.auditLog.create({
+          data: {
+            adminId: req.user!.userId,
+            action: 'REJECT_LEAVE',
+            targetType: 'LEAVE',
+            targetId: leave.id,
+            meta: JSON.stringify({
+              employeeName: leave.employee.fullName,
+              leaveType: leave.leaveType,
+              fromDate: leave.fromDate.toISOString().split('T')[0],
+              toDate: leave.toDate.toISOString().split('T')[0],
+              totalDays: leave.totalDays,
+              comment: comment.trim(),
+              bulk: true,
+            }),
+          },
+        }).catch((e) => logger.error('Failed to log rejectLeave (bulk) to auditLog:', e));
+
         sendLeaveStatusEmail(
           (leave.employee as any).user?.email ?? '',
           leave.employee.fullName,
@@ -369,7 +415,7 @@ export const bulkRejectLeaves = async (req: AuthRequest, res: Response): Promise
     const rejected = results.filter((r) => r.success).length;
     return res.json({ message: `${rejected} rejected.`, results });
   } catch (error) {
-    console.error('bulkRejectLeaves error:', error);
+    logger.error('bulkRejectLeaves error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -400,9 +446,25 @@ export const overrideAbsent = async (req: AuthRequest, res: Response): Promise<a
       data: { overrideById: adminId },
     });
 
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        action: 'OVERRIDE_ABSENT',
+        targetType: 'LEAVE',
+        targetId: leave.id,
+        meta: JSON.stringify({
+          employeeId: leave.employeeId,
+          leaveType: leave.leaveType,
+          fromDate: leave.fromDate.toISOString().split('T')[0],
+          toDate: leave.toDate.toISOString().split('T')[0],
+          totalDays: leave.totalDays,
+        }),
+      },
+    }).catch((e) => logger.error('Failed to log overrideAbsent to auditLog:', e));
+
     return res.json({ message: 'Absent leave overridden to Approved.' });
   } catch (error) {
-    console.error('overrideAbsent error:', error);
+    logger.error('overrideAbsent error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -442,7 +504,7 @@ export const getEmployeeBalanceAdmin = async (req: AuthRequest, res: Response): 
 
     return res.json({ balances, leavePolicy: employee.leavePolicy });
   } catch (error) {
-    console.error('getEmployeeBalanceAdmin error:', error);
+    logger.error('getEmployeeBalanceAdmin error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -474,7 +536,7 @@ export const getEmployeeLeavesAdmin = async (req: AuthRequest, res: Response): P
 
     return res.json({ data: leaves, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch (error) {
-    console.error('getEmployeeLeavesAdmin error:', error);
+    logger.error('getEmployeeLeavesAdmin error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -583,12 +645,12 @@ export const importLeave = async (req: AuthRequest, res: Response): Promise<any>
         empUser.email,
         employee.fullName,
         { leaveType, fromDate: from.toLocaleDateString('en-IN'), toDate: to.toLocaleDateString('en-IN'), isHalfDay, halfDaySlot: isHalfDay && halfDaySlot ? halfDaySlot : null, totalDays, reason }
-      ).catch((e) => console.error('[email] sendAdminImportedLeaveEmail failed:', e));
+      ).catch((e) => logger.error('[email] sendAdminImportedLeaveEmail failed:', e));
     }
 
     return res.status(201).json({ message: 'Leave record imported.', application });
   } catch (error) {
-    console.error('importLeave error:', error);
+    logger.error('importLeave error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -695,7 +757,7 @@ export const importBulkLeaves = async (req: AuthRequest, res: Response): Promise
 
     return res.json({ message: `${imported} imported, ${failed} failed.`, results });
   } catch (error) {
-    console.error('importBulkLeaves error:', error);
+    logger.error('importBulkLeaves error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

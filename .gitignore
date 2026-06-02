@@ -32,5 +32,8 @@ Thumbs.db
 # ── Prisma generated client (rebuilt via prisma generate) ─────────────────────
 backend/node_modules/
 
+# ── Internal docs (not part of the shipped app) ───────────────────────────────
+Document/
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.tsbuildinfo
