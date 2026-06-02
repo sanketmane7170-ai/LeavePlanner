@@ -38,7 +38,11 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
     // Set cookie
     res.cookie('jwt', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      // Secure cookies require HTTPS. Default ON in production; set COOKIE_SECURE=false
+      // ONLY for a temporary plain-HTTP/IP deployment (logins won't work otherwise).
+      secure: process.env.COOKIE_SECURE
+        ? process.env.COOKIE_SECURE === 'true'
+        : process.env.NODE_ENV === 'production',
       sameSite: 'strict', // prevent CSRF token leakage via cross-site requests
       maxAge: 24 * 60 * 60 * 1000, // 1 day — matches JWT expiry
     });

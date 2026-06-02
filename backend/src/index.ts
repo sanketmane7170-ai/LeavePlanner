@@ -37,6 +37,10 @@ const app = express();
 const PORT = process.env.PORT ?? 3001;
 const isProd = process.env.NODE_ENV === 'production';
 
+// Behind nginx reverse proxy: trust the first proxy hop so secure cookies,
+// req.ip, and rate-limiting see the real client IP (not nginx's).
+if (isProd) app.set('trust proxy', 1);
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'same-site' },
