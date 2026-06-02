@@ -13,14 +13,17 @@ const router = Router();
 
 router.post('/login', async (req: Request, res: Response): Promise<any> => {
   try {
-    const { email, password } = req.body;
+    const { email, password, remember } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
+    // Normalize email so login is case-insensitive
+    const normalizedEmail = String(email).trim().toLowerCase();
+
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
       include: { employee: true },
     });
 
@@ -33,9 +36,21 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = signToken({ userId: user.id, role: user.role, tokenVersion: user.tokenVersion });
+    // Block deactivated employees (admins have no employee record / are always allowed)
+    if (user.employee && user.employee.isActive === false) {
+      return res.status(403).json({ message: 'Your account has been deactivated. Please contact your administrator.' });
+    }
 
-    // Set cookie
+    // "Remember me" → 30-day session, otherwise 1 day
+    const rememberMe = remember === true;
+    const tokenTtl   = rememberMe ? '30d' : '1d';
+    const cookieMaxAge = (rememberMe ? 30 : 1) * 24 * 60 * 60 * 1000;
+
+    const token = signToken(
+      { userId: user.id, role: user.role, tokenVersion: user.tokenVersion, isFirstLogin: user.isFirstLogin },
+      tokenTtl
+    );
+
     res.cookie('jwt', token, {
       httpOnly: true,
       // Secure cookies require HTTPS. Default ON in production; set COOKIE_SECURE=false
@@ -44,7 +59,7 @@ router.post('/login', async (req: Request, res: Response): Promise<any> => {
         ? process.env.COOKIE_SECURE === 'true'
         : process.env.NODE_ENV === 'production',
       sameSite: 'strict', // prevent CSRF token leakage via cross-site requests
-      maxAge: 24 * 60 * 60 * 1000, // 1 day — matches JWT expiry
+      maxAge: cookieMaxAge,
     });
 
     return res.json({
@@ -174,8 +189,9 @@ router.post('/forgot-password', otpRequestLimiter, async (req: Request, res: Res
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: 'Email is required' });
+    const normalizedEmail = String(email).trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) {
       // Don't leak if user exists, just return success
       return res.json({ message: 'If an account exists, an OTP has been sent.' });
@@ -185,7 +201,7 @@ router.post('/forgot-password', otpRequestLimiter, async (req: Request, res: Res
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
     await prisma.passwordResetToken.create({
-      data: { email, otp, expiresAt },
+      data: { email: normalizedEmail, otp, expiresAt },
     });
 
     const html = `
@@ -200,7 +216,7 @@ router.post('/forgot-password', otpRequestLimiter, async (req: Request, res: Res
 
     await transporter.sendMail({
       from: process.env.EMAIL_FROM || 'Innovizia <noreply@innovizia.com>',
-      to: email,
+      to: normalizedEmail,
       subject: 'Your Password Reset OTP',
       html,
     });
@@ -221,9 +237,10 @@ router.post('/reset-password', otpVerifyLimiter, async (req: Request, res: Respo
     if (newPassword.length < 8) {
       return res.status(400).json({ message: 'New password must be at least 8 characters' });
     }
+    const normalizedEmail = String(email).trim().toLowerCase();
 
     const token = await prisma.passwordResetToken.findFirst({
-      where: { email, otp },
+      where: { email: normalizedEmail, otp },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -232,7 +249,7 @@ router.post('/reset-password', otpVerifyLimiter, async (req: Request, res: Respo
       return res.status(400).json({ message: 'OTP has expired. Please request a new one.' });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const hashed = await bcrypt.hash(newPassword, 10);
@@ -242,7 +259,7 @@ router.post('/reset-password', otpVerifyLimiter, async (req: Request, res: Respo
     });
 
     // Delete used tokens for this email
-    await prisma.passwordResetToken.deleteMany({ where: { email } });
+    await prisma.passwordResetToken.deleteMany({ where: { email: normalizedEmail } });
 
     return res.json({ message: 'Password has been reset successfully. You can now log in.' });
   } catch (error) {

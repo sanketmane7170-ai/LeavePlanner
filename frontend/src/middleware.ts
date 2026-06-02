@@ -1,68 +1,74 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { jwtVerify } from 'jose';
 
-export function middleware(request: NextRequest) {
+// JWT_SECRET must match the backend. Provided as a server-only env var (no
+// NEXT_PUBLIC_ prefix) so it is never shipped to the browser.
+const secret = process.env.JWT_SECRET
+  ? new TextEncoder().encode(process.env.JWT_SECRET)
+  : null;
+
+const CHANGE_PASSWORD_PATH = '/employee/change-password';
+
+function redirectToLogin(request: NextRequest) {
+  const res = NextResponse.redirect(new URL('/login', request.url));
+  res.cookies.delete('jwt');
+  return res;
+}
+
+export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  const isPublicRoute =
+    path === '/login' || path === '/forgot-password' || path === '/contact-admin';
 
-  // Define public routes
-  const isPublicRoute = path === '/login' || path === '/forgot-password' || path === '/contact-admin';
-
-  // Get token from cookies
   const token = request.cookies.get('jwt')?.value;
 
-  // Redirect to login if accessing protected route without token
-  if (!token && !isPublicRoute) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  // No token → only public routes allowed
+  if (!token) {
+    return isPublicRoute ? NextResponse.next() : redirectToLogin(request);
   }
 
-  // If user is logged in, parse token role
-  if (token) {
-    try {
-      // In Edge runtime, full JWT verification might need Jose library.
-      // For basic routing, we decode the payload part of the JWT.
-      const payloadBase64 = token.split('.')[1];
-      const decodedPayload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf-8'));
-      
-      const role = decodedPayload.role;
+  // If the secret isn't configured we cannot verify — fail safe to login
+  // (except on public routes) rather than trusting an unverified token.
+  if (!secret) {
+    return isPublicRoute ? NextResponse.next() : redirectToLogin(request);
+  }
 
-      // Redirect authenticated users away from login page
-      if (isPublicRoute) {
-        if (role === 'ADMIN') {
-          return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-        } else {
-          return NextResponse.redirect(new URL('/employee/dashboard', request.url));
-        }
-      }
+  // Cryptographically VERIFY the token (signature + expiry), not just decode it.
+  let role: string;
+  let isFirstLogin: boolean;
+  try {
+    const { payload } = await jwtVerify(token, secret);
+    role = String(payload.role ?? '');
+    isFirstLogin = payload.isFirstLogin === true;
+  } catch {
+    // Invalid/forged/expired token → treat as logged out
+    return isPublicRoute ? NextResponse.next() : redirectToLogin(request);
+  }
 
-      // Role-based access control
-      if (path.startsWith('/admin') && role !== 'ADMIN') {
-        return NextResponse.redirect(new URL('/employee/dashboard', request.url));
-      }
+  // Authenticated users should not see the login/forgot pages
+  if (isPublicRoute) {
+    const dest = role === 'ADMIN' ? '/admin/dashboard' : '/employee/dashboard';
+    return NextResponse.redirect(new URL(dest, request.url));
+  }
 
-      if (path.startsWith('/employee') && role !== 'EMPLOYEE') {
-        return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-      }
-    } catch (e) {
-      console.error('Error decoding token in middleware', e);
-      // On error, just clear cookie and redirect to login
-      const response = NextResponse.redirect(new URL('/login', request.url));
-      response.cookies.delete('jwt');
-      return response;
-    }
+  // Force first-login employees to set a new password before anything else.
+  // (Temp passwords are an employee-only flow; admins set their own at seed time.)
+  if (isFirstLogin && role === 'EMPLOYEE' && path !== CHANGE_PASSWORD_PATH) {
+    return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.url));
+  }
+
+  // Role-based access control
+  if (path.startsWith('/admin') && role !== 'ADMIN') {
+    return NextResponse.redirect(new URL('/employee/dashboard', request.url));
+  }
+  if (path.startsWith('/employee') && role !== 'EMPLOYEE') {
+    return NextResponse.redirect(new URL('/admin/dashboard', request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
-  ],
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 };

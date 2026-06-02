@@ -141,7 +141,10 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       return res.status(400).json({ message: 'Full name and email are required' });
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Store emails lowercase so login is case-insensitive
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existingUser) {
       return res.status(409).json({ message: 'An account with this email already exists' });
     }
@@ -152,7 +155,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
 
     const user = await prisma.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         role: 'EMPLOYEE',
         isFirstLogin: true,
@@ -176,7 +179,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
     });
 
     try {
-      await sendWelcomeEmail(email, fullName, employeeId, tempPassword);
+      await sendWelcomeEmail(normalizedEmail, fullName, employeeId, tempPassword);
     } catch (emailErr) {
       logger.error('Welcome email failed:', emailErr);
     }
@@ -217,6 +220,7 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
 
     const previousLeavePolicyId = employee.leavePolicyId;
     const previousWfhPolicyId = employee.wfhPolicyId;
+    const isBeingDeactivated = isActive !== undefined && Boolean(isActive) === false && employee.isActive === true;
 
     const updated = await prisma.employee.update({
       where: { id },
@@ -250,6 +254,14 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
 
     const newLeavePolicyId = updated.leavePolicyId;
     const newWfhPolicyId = updated.wfhPolicyId;
+
+    // Deactivation → invalidate all live sessions immediately (bump tokenVersion)
+    if (isBeingDeactivated) {
+      await prisma.user.update({
+        where: { id: employee.userId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    }
 
     // Policy removed → archive all current-year active balances for this employee
     if (leavePolicyId !== undefined && !newLeavePolicyId && previousLeavePolicyId) {

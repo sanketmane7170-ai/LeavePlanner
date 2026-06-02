@@ -160,6 +160,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mouseX, setMouseX] = useState<number>(0);
@@ -266,11 +267,14 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await api.post("/auth/login", { email, password });
+      const response = await api.post("/auth/login", { email, password, remember });
       const { user, message } = response.data;
       toast.success(message || "Login successful!");
-      
-      if (user.role === "ADMIN") {
+
+      // First-login employees must set their own password before using the app
+      if (user.isFirstLogin && user.role === "EMPLOYEE") {
+        router.push("/employee/change-password");
+      } else if (user.role === "ADMIN") {
         router.push("/admin/dashboard");
       } else {
         router.push("/employee/dashboard");
@@ -501,7 +505,11 @@ export default function LoginPage() {
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Checkbox id="remember" />
+                <Checkbox
+                  id="remember"
+                  checked={remember}
+                  onCheckedChange={(v) => setRemember(v === true)}
+                />
                 <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">
                   Remember for 30 days
                 </Label>

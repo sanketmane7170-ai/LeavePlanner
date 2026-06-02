@@ -7,10 +7,12 @@ export interface JwtPayload {
   userId:       string;
   role:         string;
   tokenVersion: number;
+  isFirstLogin: boolean;
 }
 
-export const signToken = (payload: JwtPayload): string =>
-  jwt.sign(payload, JWT_SECRET, { expiresIn: '1d' });
+// expiresIn defaults to 1 day; pass '30d' for a "remember me" session.
+export const signToken = (payload: JwtPayload, expiresIn: string = '1d'): string =>
+  jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn as any });
 
 export const verifyToken = (token: string): JwtPayload =>
   jwt.verify(token, JWT_SECRET) as JwtPayload;

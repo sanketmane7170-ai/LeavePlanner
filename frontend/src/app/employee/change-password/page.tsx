@@ -46,8 +46,11 @@ export default function ChangePasswordPage() {
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
       });
-      toast.success("Password changed successfully! Redirecting…");
-      setTimeout(() => router.push("/employee/dashboard"), 1200);
+      // Changing the password invalidates the current session (tokenVersion bumped),
+      // so clear the cookie and send the user to log in again with the new password.
+      try { await api.post("/auth/logout"); } catch { /* ignore */ }
+      toast.success("Password changed! Please log in with your new password.");
+      setTimeout(() => router.push("/login"), 1200);
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to change password");
     } finally {

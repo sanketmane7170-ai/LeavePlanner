@@ -31,8 +31,13 @@ npx prisma db seed || true
 # ── Frontend ──────────────────────────────────────────────────────────────────
 info "Building frontend (API served from same origin at /api)…"
 cd "$APP_DIR/frontend"
-# Same-origin API path → no CORS, secure cookie works
-echo "NEXT_PUBLIC_API_URL=${FRONTEND_URL}/api" > .env.production
+# Same-origin API path → no CORS, secure cookie works.
+# JWT_SECRET (server-only) must match the backend so middleware can verify tokens.
+JWT_SECRET_VAL=$(grep -E '^JWT_SECRET=' "$APP_DIR/backend/.env" | cut -d= -f2- | tr -d '"')
+{
+  echo "NEXT_PUBLIC_API_URL=${FRONTEND_URL}/api"
+  echo "JWT_SECRET=${JWT_SECRET_VAL}"
+} > .env.production
 npm ci --include=dev
 npm run build
 
