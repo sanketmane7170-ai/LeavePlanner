@@ -1,0 +1,425 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum LeaveType {
+  SICK
+  TRANSPORT_WEATHER
+  PERSONAL
+  GENERAL
+}
+
+enum HalfDaySlot {
+  FIRST_HALF
+  SECOND_HALF
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  ABSENT
+}
+
+enum WfhStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum SaturdayRule {
+  NONE
+  ALL
+  FIRST
+  SECOND
+  THIRD
+  FOURTH
+  FIRST_THIRD
+  SECOND_FOURTH
+}
+
+enum ProbationRule {
+  NONE
+  NO_LEAVES
+  UNPAID_ALLOWED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  password     String
+  role         Role      @default(EMPLOYEE)
+  isFirstLogin Boolean   @default(true)
+  tokenVersion Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  employee      Employee?
+  notifications Notification[]
+}
+
+model Employee {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employeeId         String             @unique
+  fullName           String
+  personalEmail      String?
+  mobile             String?
+  department         String?
+  designation        String?
+  dateOfJoining      DateTime?
+  birthday           DateTime?
+  probationMonths    Int                @default(6)
+  reportingManagerId String?
+  reportingManager   Employee?          @relation("ManagerToEmployee", fields: [reportingManagerId], references: [id])
+  directReports      Employee[]         @relation("ManagerToEmployee")
+  isActive           Boolean            @default(true)
+  leavePolicyId      String?
+  leavePolicy        LeavePolicy?       @relation(fields: [leavePolicyId], references: [id])
+  wfhPolicyId        String?
+  wfhPolicy          WfhPolicy?         @relation(fields: [wfhPolicyId], references: [id])
+  workingSchedule    WorkingSchedule?
+  policyExceptions   PolicyException[]
+  wfhPolicyExceptions WfhPolicyException[]
+  leaveApplications  LeaveApplication[]
+  monthlyReports     MonthlyReport[]
+  wfhApplications    WfhApplication[]
+  leaveBalances      LeaveBalance[]
+  absentRecords      AbsentRecord[]
+  announcementDismissals AnnouncementDismissal[]
+  canViewTeamCalendar Boolean            @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LeavePolicy {
+  id               String            @id @default(cuid())
+  name             String
+  leaveType        LeaveType         @default(GENERAL)
+  daysAllowed      Float
+  approvalRequired Boolean           @default(true)
+  noticeRequired   Boolean           @default(false)
+  minNoticeDays    Int               @default(0)
+  halfDayAllowed   Boolean           @default(true)
+  carryForward     Boolean           @default(false)
+  probationRule    ProbationRule     @default(NONE)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  employees        Employee[]
+  exceptions       PolicyException[]
+  rules            PolicyRule[]
+}
+
+model PolicyException {
+  id           String      @id @default(cuid())
+  policyId     String
+  policy       LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  overrideDays Float
+  blackoutFrom DateTime
+  blackoutTo   DateTime
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model PolicyRule {
+  id               String      @id @default(cuid())
+  policyId         String
+  policy           LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  operator         String      @default("GTE")  // GTE>=  GT>  LTE<=  LT<  EQ=
+  minDays          Float
+  approvalRequired Boolean     @default(true)
+  noticeRequired   Boolean     @default(false)
+  minNoticeDays    Int         @default(0)
+  exception        String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model WfhPolicy {
+  id               String               @id @default(cuid())
+  name             String
+  daysAllowed      Int
+  approvalRequired Boolean              @default(true)
+  noticeRequired   Boolean              @default(false)
+  minNoticeDays    Int                  @default(0)
+  halfDayAllowed   Boolean              @default(true)
+  probationRule    ProbationRule        @default(NONE)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  employees        Employee[]
+  exceptions       WfhPolicyException[]
+  rules            WfhPolicyRule[]
+}
+
+model WfhPolicyException {
+  id           String      @id @default(cuid())
+  policyId     String
+  policy       WfhPolicy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  overrideDays Float
+  blackoutFrom DateTime
+  blackoutTo   DateTime
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model WfhPolicyRule {
+  id               String      @id @default(cuid())
+  policyId         String
+  policy       WfhPolicy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  operator         String      @default("GTE")  // GTE>=  GT>  LTE<=  LT<  EQ=
+  minDays          Float
+  approvalRequired Boolean     @default(true)
+  noticeRequired   Boolean     @default(false)
+  minNoticeDays    Int         @default(0)
+  exception        String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model WorkingSchedule {
+  id            String       @id @default(cuid())
+  employeeId    String       @unique
+  employee      Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  workingDays   String[]
+  saturdayRule  SaturdayRule @default(NONE)
+  monthlyTarget Int?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model PublicHoliday {
+  id        String   @id @default(cuid())
+  date      DateTime
+  name      String
+  year      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LeaveApplication {
+  id            String       @id @default(cuid())
+  employeeId    String
+  employee      Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType
+  fromDate      DateTime
+  toDate        DateTime
+  isHalfDay     Boolean      @default(false)
+  halfDaySlot   HalfDaySlot?
+  totalDays     Float
+  reason        String
+  attachmentUrl String?
+  status          LeaveStatus  @default(PENDING)
+  adminComment    String?
+  isAdminEntry    Boolean      @default(false)
+  isUnpaid        Boolean      @default(false)
+  noticeViolation Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model WfhApplication {
+  id           String       @id @default(cuid())
+  employeeId   String
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date         DateTime
+  toDate       DateTime?
+  isHalfDay    Boolean      @default(false)
+  halfDaySlot  HalfDaySlot?
+  totalDays    Float        @default(1)
+  reason       String
+  status       WfhStatus    @default(PENDING)
+  adminComment String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model LeaveBalance {
+  id            String    @id @default(cuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType
+  year          Int
+  totalDays     Float
+  usedDays      Float     @default(0)
+  remainingDays Float
+  isArchived    Boolean   @default(false)
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // isArchived in the key allows one active + one archived per (employee, type, year)
+  @@unique([employeeId, leaveType, year, isArchived])
+}
+
+model AbsentRecord {
+  id           String   @id @default(cuid())
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date         DateTime
+  reason       String?
+  overrideById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String
+  targetType String
+  targetId   String
+  meta       String?
+  createdAt  DateTime @default(now())
+}
+
+model OrgSettings {
+  id        String   @id @default("global")
+  orgName   String   @default("Innovizia")
+  timezone  String   @default("Asia/Kolkata")
+  updatedAt DateTime @updatedAt
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model EmployeeRole {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String
+  category    String
+  subject     String
+  bodyHtml    String   @db.Text
+  variables   Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MonthlyReport {
+  id               String   @id @default(cuid())
+  employeeId       String
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month            Int      // 1–12
+  year             Int
+  totalWorkingDays Int
+  presentDays      Float
+  leaveDays        Float
+  absentDays       Float
+  wfhDays          Float
+  attendancePct    Float
+  generatedAt      DateTime @default(now())
+
+  @@unique([employeeId, month, year])
+}
+
+model DataBackup {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  type          String   @default("DAILY")   // DAILY | MANUAL
+  label         String?
+  employeeCount Int      @default(0)
+  policyCount   Int      @default(0)
+  leaveCount    Int      @default(0)
+  sizeBytes     Int?
+  data          Json
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  otp       String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+enum TicketStatus {
+  OPEN
+  RESOLVED
+}
+
+model SupportTicket {
+  id        String       @id @default(cuid())
+  name      String
+  email     String
+  mobile    String?
+  reason    String
+  status    TicketStatus @default(OPEN)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+enum AnnouncementPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model Announcement {
+  id               String               @id @default(cuid())
+  title            String
+  content          String               @db.Text
+  priority         AnnouncementPriority @default(MEDIUM)
+  scheduledAt      DateTime?
+  expiresAt        DateTime?
+  isActive         Boolean              @default(true)
+  isBirthday       Boolean              @default(false)
+  targetEmployeeId String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  dismissals       AnnouncementDismissal[]
+}
+
+model AnnouncementDismissal {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  dismissedAt    DateTime     @default(now())
+
+  @@unique([announcementId, employeeId])
+}

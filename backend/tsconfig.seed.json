@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2020"],
+    "types": ["node"],
+    "rootDir": "."
+  },
+  "include": ["prisma/**/*", "src/lib/prisma.ts", "src/data/emailTemplateDefaults.ts"]
+}

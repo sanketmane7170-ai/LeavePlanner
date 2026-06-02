@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── react-day-picker theme overrides ─── */
+.rdp {
+  --rdp-accent-color: #2563EB;
+  --rdp-background-color: #eff6ff;
+  --rdp-accent-color-dark: #3b82f6;
+  --rdp-background-color-dark: rgba(37, 99, 235, 0.2);
+  --rdp-cell-size: 38px;
+  margin: 0;
+}
+.rdp-day_selected:not([disabled]):not(.rdp-day_range_middle) {
+  background-color: #2563EB;
+}
+.rdp-day_range_middle {
+  background-color: #eff6ff;
+  color: #2563EB;
+}
+.dark .rdp-day_range_middle {
+  background-color: rgba(37, 99, 235, 0.15);
+  color: #93c5fd;
+}
+.rdp-day:hover:not([disabled]):not(.rdp-day_selected) {
+  background-color: #eff6ff;
+}
+.dark .rdp-day:hover:not([disabled]):not(.rdp-day_selected) {
+  background-color: rgba(37, 99, 235, 0.15);
+}
+.dark .rdp-day {
+  color: #e2e8f0;
+}
+.dark .rdp-caption_label,
+.dark .rdp-head_cell {
+  color: #94a3b8;
+}
+.dark .rdp-nav_button {
+  color: #94a3b8;
+}
+.rdp-day_outside {
+  opacity: 0.4;
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  --card: #1e293b;
+  --card-foreground: #f8fafc;
+  --primary: #3b82f6;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #334155;
+  --input: #334155;
+  --ring: #3b82f6;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 9999px;
+  }
+
+  .dark .scrollbar-thin {
+    scrollbar-color: #334155 transparent;
+  }
+}
+
