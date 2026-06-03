@@ -101,8 +101,17 @@ model Employee {
   wfhApplications    WfhApplication[]
   leaveBalances      LeaveBalance[]
   absentRecords      AbsentRecord[]
-  announcementDismissals AnnouncementDismissal[]
-  canViewTeamCalendar Boolean            @default(false)
+  announcementDismissals  AnnouncementDismissal[]
+  attendanceCorrections   AttendanceCorrection[]
+  canViewTeamCalendar  Boolean            @default(false)
+
+  // Notice period
+  isOnNoticePeriod   Boolean    @default(false)
+  noticePeriodStart  DateTime?
+  noticePeriodEnd    DateTime?
+  noticePeriodType   String?    // RESIGNED | TERMINATED | MUTUAL
+  earlyReleaseDate   DateTime?
+  allowLeaveOverride Boolean    @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -127,30 +136,32 @@ model LeavePolicy {
 }
 
 model PolicyException {
-  id           String      @id @default(cuid())
-  policyId     String
-  policy       LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  employeeId   String
-  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  overrideDays Float
-  blackoutFrom DateTime
-  blackoutTo   DateTime
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id                 String      @id @default(cuid())
+  policyId           String
+  policy             LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  employeeId         String
+  employee           Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  overrideDays       Float
+  blackoutFrom       DateTime
+  blackoutTo         DateTime
+  allowedLeaveTypes  LeaveType[]
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 }
 
 model PolicyRule {
-  id               String      @id @default(cuid())
-  policyId         String
-  policy           LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  operator         String      @default("GTE")  // GTE>=  GT>  LTE<=  LT<  EQ=
-  minDays          Float
-  approvalRequired Boolean     @default(true)
-  noticeRequired   Boolean     @default(false)
-  minNoticeDays    Int         @default(0)
-  exception        String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  id                   String      @id @default(cuid())
+  policyId             String
+  policy               LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  operator             String      @default("GTE")  // GTE>=  GT>  LTE<=  LT<  EQ=
+  minDays              Float
+  approvalRequired     Boolean     @default(true)
+  noticeRequired       Boolean     @default(false)
+  minNoticeDays        Int         @default(0)
+  exception            String?
+  applicableLeaveTypes LeaveType[]
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 }
 
 model WfhPolicy {
@@ -295,13 +306,18 @@ model AbsentRecord {
 model AuditLog {
   id         String   @id @default(cuid())
   adminId    String
+  adminName  String?
   action     String
   targetType String
   targetId   String
   meta       String?
+  ipAddress  String?
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+  @@index([adminId])
+  @@index([action])
+  @@index([targetType])
 }
 
 model OrgSettings {
@@ -367,6 +383,22 @@ model MonthlyReport {
   generatedAt      DateTime @default(now())
 
   @@unique([employeeId, month, year])
+}
+
+model AttendanceCorrection {
+  id              String   @id @default(cuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime
+  correctedStatus String
+  originalStatus  String
+  reason          String?
+  correctedBy     String   // admin userId
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([employeeId, date])
 }
 
 model DataBackup {

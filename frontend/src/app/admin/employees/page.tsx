@@ -2,9 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import {
   Plus,
@@ -23,23 +20,19 @@ import {
   Calendar,
   Shield,
   Users,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Employee, LeavePolicy, WfhPolicy } from "@/types";
 import { WorkingScheduleTab } from "@/components/admin/WorkingScheduleTab";
 import { EmployeeLeavesTab } from "@/components/admin/EmployeeLeavesTab";
+import { EmployeeWfhTab } from "@/components/admin/EmployeeWfhTab";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Sheet,
   SheetContent,
@@ -51,23 +44,6 @@ import { cn } from "@/lib/utils";
 import { WeaveSpinner } from "@/components/ui/weave-spinner";
 
 
-
-// ── Schema ────────────────────────────────────────────────────────────────────
-const createSchema = z.object({
-  fullName: z.string().min(2, "At least 2 characters"),
-  email: z.string().email("Invalid email"),
-  personalEmail: z.string().email("Invalid email").optional().or(z.literal("")),
-  mobile: z.string().optional(),
-  department: z.string().optional(),
-  designation: z.string().optional(),
-  dateOfJoining: z.string().optional(),
-  birthday: z.string().optional(),
-  probationMonths: z.string().optional(),
-  reportingManagerId: z.string().optional(),
-  canViewTeamCalendar: z.boolean(),
-});
-
-type CreateFormValues = z.infer<typeof createSchema>;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDate(dateStr?: string) {
@@ -89,20 +65,23 @@ function getInitials(name: string) {
 }
 
 // ── Tabs (employee detail) ────────────────────────────────────────────────────
-type TabId = "info" | "leaves" | "wfh" | "schedule";
+type TabId = "info" | "leaves" | "wfh" | "schedule" | "notice";
 
 function Tabs({
   active,
   onChange,
+  isOnNotice,
 }: {
   active: TabId;
   onChange: (t: TabId) => void;
+  isOnNotice?: boolean;
 }) {
   const tabs: { id: TabId; label: string }[] = [
-    { id: "info", label: "Info" },
-    { id: "leaves", label: "Leaves" },
-    { id: "wfh", label: "WFH" },
+    { id: "info",     label: "Info"     },
+    { id: "leaves",   label: "Leaves"   },
+    { id: "wfh",      label: "WFH"      },
     { id: "schedule", label: "Schedule" },
+    { id: "notice",   label: isOnNotice ? "⚠ Notice" : "Notice" },
   ];
   return (
     <div className="flex border-b border-slate-200 dark:border-slate-800 px-6">
@@ -112,8 +91,12 @@ function Tabs({
           onClick={() => onChange(t.id)}
           className={cn(
             "px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px",
-            active === t.id
+            active === t.id && t.id === "notice"
+              ? "border-red-500 text-red-500"
+              : active === t.id
               ? "border-primary text-primary"
+              : t.id === "notice" && isOnNotice
+              ? "border-transparent text-red-500"
               : "border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white"
           )}
         >
@@ -149,6 +132,180 @@ function InfoRow({
   );
 }
 
+// ── Notice Period Tab ─────────────────────────────────────────────────────────
+const NOTICE_TYPES = [
+  { value: "RESIGNED",   label: "Resigned",          color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+  { value: "TERMINATED", label: "Terminated",         color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+  { value: "MUTUAL",     label: "Mutual Separation",  color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+];
+
+function NoticePeriodTab({ employee, onSaved }: {
+  employee: Employee & {
+    isOnNoticePeriod?: boolean;
+    noticePeriodStart?: string | null;
+    noticePeriodEnd?: string | null;
+    noticePeriodType?: string | null;
+    earlyReleaseDate?: string | null;
+    allowLeaveOverride?: boolean;
+  };
+  onSaved: () => void;
+}) {
+  const toDateInput = (s?: string | null) => s ? s.split("T")[0] : "";
+
+  const [start, setStart]           = useState(toDateInput(employee.noticePeriodStart));
+  const [end, setEnd]               = useState(toDateInput(employee.noticePeriodEnd));
+  const [type, setType]             = useState(employee.noticePeriodType ?? "RESIGNED");
+  const [early, setEarly]           = useState(toDateInput(employee.earlyReleaseDate));
+  const [override, setOverride]     = useState(employee.allowLeaveOverride ?? false);
+  const [saving, setSaving]         = useState(false);
+  const [clearing, setClearing]     = useState(false);
+
+  const isActive = employee.isOnNoticePeriod ?? false;
+  const today = new Date();
+  const endDate = employee.noticePeriodEnd ? new Date(employee.noticePeriodEnd) : null;
+  const earlyDate = employee.earlyReleaseDate ? new Date(employee.earlyReleaseDate) : null;
+  const effectiveEnd = earlyDate && endDate && earlyDate < endDate ? earlyDate : endDate;
+  const daysLeft = effectiveEnd
+    ? Math.max(0, Math.ceil((effectiveEnd.getTime() - today.getTime()) / 86400000))
+    : null;
+
+  const handleSet = async () => {
+    if (!start || !end) { toast.error("Start and end dates are required"); return; }
+    setSaving(true);
+    try {
+      await api.patch(`/admin/employees/${employee.id}`, {
+        noticePeriodStart: start, noticePeriodEnd: end,
+        noticePeriodType: type, earlyReleaseDate: early || null,
+        allowLeaveOverride: override,
+      });
+      toast.success("Notice period set. Emails sent.");
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to set notice period");
+    } finally { setSaving(false); }
+  };
+
+  const handleClear = async () => {
+    if (!confirm("Clear the notice period for this employee?")) return;
+    setClearing(true);
+    try {
+      await api.patch(`/admin/employees/${employee.id}`, { clearNoticePeriod: true });
+      toast.success("Notice period cleared.");
+      onSaved();
+    } catch {
+      toast.error("Failed to clear notice period");
+    } finally { setClearing(false); }
+  };
+
+  const typeInfo = NOTICE_TYPES.find((t) => t.value === type);
+
+  return (
+    <div className="space-y-5 p-1">
+      {/* Status banner */}
+      {isActive ? (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <AlertTriangle size={18} className="text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+              Active Notice Period
+              {daysLeft !== null && <span className="ml-2 font-normal">— {daysLeft} day{daysLeft !== 1 ? "s" : ""} remaining</span>}
+            </p>
+            <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+              Leave and WFH applications are blocked{override ? " (emergency override enabled)" : ""}.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm">
+          <CheckCircle2 size={15} className="text-emerald-500" />
+          No active notice period.
+        </div>
+      )}
+
+      {/* Form */}
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Notice Type</label>
+          <div className="grid grid-cols-3 gap-2">
+            {NOTICE_TYPES.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setType(t.value)}
+                className={cn(
+                  "py-2 rounded-xl border-2 text-xs font-semibold transition-all",
+                  type === t.value ? "border-primary bg-primary/5 text-primary" : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300"
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Start Date *</label>
+            <input type="date" value={start} onChange={(e) => setStart(e.target.value)}
+              className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">End Date (Last Day) *</label>
+            <input type="date" value={end} onChange={(e) => setEnd(e.target.value)}
+              className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+            Early Release Date <span className="text-slate-400 font-normal">(optional — lifts restrictions from this date)</span>
+          </label>
+          <input type="date" value={early} onChange={(e) => setEarly(e.target.value)}
+            className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        </div>
+
+        <div
+          onClick={() => setOverride(!override)}
+          className={cn(
+            "flex items-center justify-between p-3 rounded-xl border cursor-pointer select-none transition-colors",
+            override ? "border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700" : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+          )}
+        >
+          <div>
+            <p className="text-sm font-medium text-slate-800 dark:text-white">Allow Emergency Leave</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Admin can approve leave exceptions during notice period</p>
+          </div>
+          <div className={cn("relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors", override ? "bg-amber-500" : "bg-slate-200 dark:bg-slate-700")}>
+            <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200", override ? "translate-x-5" : "translate-x-0.5")} />
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        {isActive && (
+          <button
+            onClick={handleClear}
+            disabled={clearing}
+            className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl border border-red-200 dark:border-red-800 text-red-500 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
+          >
+            {clearing ? <WeaveSpinner size={13} className="animate-spin" /> : <XCircle size={14} />}
+            Clear Notice
+          </button>
+        )}
+        <button
+          onClick={handleSet}
+          disabled={saving || !start || !end}
+          className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {saving ? <WeaveSpinner size={13} className="animate-spin" /> : <AlertTriangle size={14} />}
+          {isActive ? "Update Notice" : "Set Notice Period"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -169,24 +326,10 @@ export default function EmployeesPage() {
   const [wfhPolicies, setWfhPolicies] = useState<Pick<WfhPolicy, "id" | "name">[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [sheetTab, setSheetTab] = useState<TabId>("info");
   const [editMode, setEditMode] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    watch,
-    formState: { errors },
-  } = useForm<CreateFormValues>({
-    resolver: zodResolver(createSchema),
-    defaultValues: { probationMonths: "6", canViewTeamCalendar: false },
-  });
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -231,24 +374,6 @@ export default function EmployeesPage() {
   useEffect(() => {
     setPage(1);
   }, [search, deptFilter, statusFilter]);
-
-  const onCreateSubmit = async (data: CreateFormValues) => {
-    setCreateLoading(true);
-    try {
-      await api.post("/admin/employees", {
-        ...data,
-        probationMonths: data.probationMonths ? parseInt(data.probationMonths, 10) : 6,
-      });
-      toast.success("Employee created! Welcome email sent.");
-      setCreateOpen(false);
-      reset();
-      fetchEmployees();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to create employee");
-    } finally {
-      setCreateLoading(false);
-    }
-  };
 
   const handleResetPassword = async (emp: Employee) => {
     if (!confirm(`Reset password for ${emp.fullName}? A new temp password will be emailed.`))
@@ -332,7 +457,7 @@ export default function EmployeesPage() {
             </div>
           </div>
           <button
-            onClick={() => setCreateOpen(true)}
+            onClick={() => router.push("/admin/employees/new")}
             className="flex items-center gap-2 h-9 px-4 rounded-xl bg-primary text-white text-sm font-semibold shadow-sm shadow-primary/30 hover:bg-primary/90 transition-all shrink-0"
           >
             <Plus size={16} />
@@ -575,164 +700,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ── Create Employee Modal ───────────────────────────────────────────── */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add New Employee</DialogTitle>
-            <DialogDescription>
-              A temporary password will be auto-generated and emailed to the employee.
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          <form onSubmit={handleSubmit(onCreateSubmit as any)}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Full Name *"
-                placeholder="John Doe"
-                error={errors.fullName?.message}
-                {...register("fullName")}
-              />
-              <Input
-                label="Work Email *"
-                type="email"
-                placeholder="john@innovizia.com"
-                error={errors.email?.message}
-                {...register("email")}
-              />
-              <Input
-                label="Personal Email"
-                type="email"
-                placeholder="john@gmail.com"
-                error={errors.personalEmail?.message}
-                {...register("personalEmail")}
-              />
-              <Input
-                label="Mobile"
-                placeholder="+91 98765 43210"
-                {...register("mobile")}
-              />
-              {/* Department dropdown */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-                {settingsDepts.length === 0 ? (
-                  <div className="flex items-center justify-between h-10 px-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900">
-                    <span className="text-xs text-slate-400 dark:text-slate-500">No departments configured.</span>
-                    <button
-                      type="button"
-                      onClick={() => router.push("/admin/settings")}
-                      className="text-xs text-primary hover:underline font-medium"
-                    >
-                      Add in Settings →
-                    </button>
-                  </div>
-                ) : (
-                  <select
-                    {...register("department")}
-                    className="flex h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="">— Select department —</option>
-                    {settingsDepts.map((d) => (
-                      <option key={d.id} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Designation dropdown */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Designation</label>
-                {settingsRoles.length === 0 ? (
-                  <div className="flex items-center justify-between h-10 px-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900">
-                    <span className="text-xs text-slate-400 dark:text-slate-500">No roles configured.</span>
-                    <button
-                      type="button"
-                      onClick={() => router.push("/admin/settings")}
-                      className="text-xs text-primary hover:underline font-medium"
-                    >
-                      Add in Settings →
-                    </button>
-                  </div>
-                ) : (
-                  <select
-                    {...register("designation")}
-                    className="flex h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="">— Select designation —</option>
-                    {settingsRoles.map((r) => (
-                      <option key={r.id} value={r.name}>{r.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <Input
-                label="Date of Joining"
-                type="date"
-                {...register("dateOfJoining")}
-              />
-              <Input
-                label="Date of Birth"
-                type="date"
-                {...register("birthday")}
-              />
-              <Input
-                label="Probation (months)"
-                type="number"
-                min={0}
-                max={24}
-                error={errors.probationMonths?.message}
-                {...register("probationMonths")}
-              />
-
-              <div className="sm:col-span-2">
-                <Select
-                  label="Reporting Manager"
-                  placeholder="Select reporting manager"
-                  {...register("reportingManagerId")}
-                >
-                  {managers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.fullName} ({m.employeeId})
-                    </option>
-                  ))}
-                </Select>
-              </div>
-
-              <div className="sm:col-span-2 flex items-center gap-2 mt-2">
-                <input
-                  type="checkbox"
-                  id="canViewTeamCalendar"
-                  className="w-4 h-4 text-primary rounded border-slate-300"
-                  checked={watch("canViewTeamCalendar")}
-                  onChange={(e) => setValue("canViewTeamCalendar", e.target.checked)}
-                />
-                <label htmlFor="canViewTeamCalendar" className="text-sm text-slate-700 dark:text-slate-300">
-                  Allow employee to view the Team Calendar
-                </label>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setCreateOpen(false);
-                  reset();
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createLoading}>
-                {createLoading && <WeaveSpinner className="animate-spin mr-2" size={15} />}
-                Create Employee
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* ── Employee Detail Sheet ──────────────────────────────────────────── */}
       <Sheet open={!!selectedEmployee} onOpenChange={(o) => !o && setSelectedEmployee(null)}>
         <SheetContent>
@@ -759,7 +726,11 @@ export default function EmployeesPage() {
                 </div>
               </SheetHeader>
 
-              <Tabs active={sheetTab} onChange={(t) => { setSheetTab(t); setEditMode(false); }} />
+              <Tabs
+                active={sheetTab}
+                onChange={(t) => { setSheetTab(t); setEditMode(false); }}
+                isOnNotice={(selectedEmployee as any)?.isOnNoticePeriod}
+              />
 
               <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
                 {sheetTab === "info" && (
@@ -812,14 +783,24 @@ export default function EmployeesPage() {
                 )}
 
                 {sheetTab === "wfh" && (
-                  <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-                    <Briefcase size={36} className="mx-auto mb-3 opacity-40" />
-                    <p className="font-medium">WFH history available in Phase 7</p>
-                  </div>
+                  <EmployeeWfhTab employeeId={selectedEmployee.id} />
                 )}
 
                 {sheetTab === "schedule" && (
                   <WorkingScheduleTab employeeId={selectedEmployee.id} />
+                )}
+
+                {sheetTab === "notice" && (
+                  <NoticePeriodTab
+                    employee={selectedEmployee as any}
+                    onSaved={() => {
+                      fetchEmployees();
+                      // Refresh the selected employee data from the list
+                      api.get(`/admin/employees/${selectedEmployee.id}`)
+                        .then((r) => setSelectedEmployee(r.data))
+                        .catch(() => {});
+                    }}
+                  />
                 )}
               </div>
 

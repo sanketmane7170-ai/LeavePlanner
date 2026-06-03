@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
+import { audit } from '../services/auditService';
 
 async function verifyAdminPassword(userId: string, password?: string): Promise<boolean> {
   if (!password) return false;
@@ -83,6 +84,7 @@ export const createLeavePolicy = async (req: AuthRequest, res: Response): Promis
       include: { employees: { select: { id: true } }, exceptions: true },
     });
 
+    audit(req, 'LEAVE_POLICY_CREATED', 'POLICY', policy.id, { name: policy.name, leaveType: policy.leaveType, daysAllowed: policy.daysAllowed });
     return res.status(201).json(policy);
   } catch (error) {
     logger.error('createLeavePolicy error:', error);
@@ -103,12 +105,7 @@ export const updateLeavePolicy = async (req: AuthRequest, res: Response): Promis
       halfDayAllowed,
       carryForward,
       probationRule,
-      confirmPassword,
     } = req.body as Record<string, any>;
-
-    if (!(await verifyAdminPassword(req.user!.userId, confirmPassword))) {
-      return res.status(401).json({ message: 'Invalid password. Action unauthorized.' });
-    }
 
     const existing = await prisma.leavePolicy.findUnique({ where: { id } });
     if (!existing) {
@@ -136,6 +133,7 @@ export const updateLeavePolicy = async (req: AuthRequest, res: Response): Promis
       },
     });
 
+    audit(req, 'LEAVE_POLICY_UPDATED', 'POLICY', id, { name: updated.name });
     return res.json(updated);
   } catch (error) {
     logger.error('updateLeavePolicy error:', error);
@@ -146,11 +144,6 @@ export const updateLeavePolicy = async (req: AuthRequest, res: Response): Promis
 export const deleteLeavePolicy = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
-    const { confirmPassword } = req.body as { confirmPassword?: string };
-
-    if (!(await verifyAdminPassword(req.user!.userId, confirmPassword))) {
-      return res.status(401).json({ message: 'Invalid password. Action unauthorized.' });
-    }
 
     const assignedCount = await prisma.employee.count({ where: { leavePolicyId: id } });
     if (assignedCount > 0) {
@@ -159,7 +152,9 @@ export const deleteLeavePolicy = async (req: AuthRequest, res: Response): Promis
       });
     }
 
+    const deleted = await prisma.leavePolicy.findUnique({ where: { id }, select: { name: true } });
     await prisma.leavePolicy.delete({ where: { id } });
+    audit(req, 'LEAVE_POLICY_DELETED', 'POLICY', id, { name: deleted?.name ?? id });
     return res.json({ message: 'Leave policy deleted' });
   } catch (error) {
     logger.error('deleteLeavePolicy error:', error);
@@ -170,16 +165,20 @@ export const deleteLeavePolicy = async (req: AuthRequest, res: Response): Promis
 export const addPolicyException = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const policyId = String(req.params['id']);
-    const { employeeId, overrideDays, blackoutFrom, blackoutTo } = req.body as {
+    const { employeeId, overrideDays, blackoutFrom, blackoutTo, allowedLeaveTypes } = req.body as {
       employeeId: string;
       overrideDays: number;
       blackoutFrom: string;
       blackoutTo: string;
+      allowedLeaveTypes?: string[];
     };
 
     if (!employeeId || overrideDays === undefined || !blackoutFrom || !blackoutTo) {
       return res.status(400).json({ message: 'employeeId, overrideDays, blackoutFrom, blackoutTo are required' });
     }
+
+    const validLeaveTypes = ['SICK', 'TRANSPORT_WEATHER', 'PERSONAL'];
+    const sanitizedLeaveTypes = (allowedLeaveTypes ?? []).filter((t) => validLeaveTypes.includes(t));
 
     const policy = await prisma.leavePolicy.findUnique({ where: { id: policyId } });
     if (!policy) return res.status(404).json({ message: 'Policy not found' });
@@ -194,12 +193,14 @@ export const addPolicyException = async (req: AuthRequest, res: Response): Promi
         overrideDays: Number(overrideDays),
         blackoutFrom: new Date(blackoutFrom),
         blackoutTo: new Date(blackoutTo),
+        allowedLeaveTypes: sanitizedLeaveTypes as any[],
       },
       include: {
         employee: { select: { id: true, fullName: true, employeeId: true } },
       },
     });
 
+    audit(req, 'POLICY_EXCEPTION_ADDED', 'POLICY', policyId, { policyName: policy.name, employeeName: employee.fullName, overrideDays });
     return res.status(201).json(exception);
   } catch (error) {
     logger.error('addPolicyException error:', error);
@@ -225,7 +226,7 @@ const VALID_OPERATORS = ['GTE', 'GT', 'LTE', 'LT', 'EQ'];
 export const addPolicyRule = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const policyId = String(req.params['id']);
-    const { minDays, operator = 'GTE', approvalRequired = true, noticeRequired = false, minNoticeDays = 0, exception } =
+    const { minDays, operator = 'GTE', approvalRequired = true, noticeRequired = false, minNoticeDays = 0, exception, applicableLeaveTypes } =
       req.body as Record<string, any>;
 
     if (minDays === undefined) {
@@ -234,6 +235,11 @@ export const addPolicyRule = async (req: AuthRequest, res: Response): Promise<an
     if (!VALID_OPERATORS.includes(operator)) {
       return res.status(400).json({ message: `Invalid operator. Must be one of: ${VALID_OPERATORS.join(', ')}` });
     }
+
+    const validLeaveTypes = ['SICK', 'TRANSPORT_WEATHER', 'PERSONAL'];
+    const sanitizedLeaveTypes = Array.isArray(applicableLeaveTypes)
+      ? applicableLeaveTypes.filter((t: string) => validLeaveTypes.includes(t))
+      : [];
 
     const policy = await prisma.leavePolicy.findUnique({ where: { id: policyId } });
     if (!policy) return res.status(404).json({ message: 'Policy not found' });
@@ -247,9 +253,11 @@ export const addPolicyRule = async (req: AuthRequest, res: Response): Promise<an
         noticeRequired: Boolean(noticeRequired),
         minNoticeDays: Number(minNoticeDays),
         exception: exception || null,
+        applicableLeaveTypes: sanitizedLeaveTypes as any[],
       },
     });
 
+    audit(req, 'POLICY_RULE_ADDED', 'POLICY', policyId, { policyName: policy.name, operator: String(operator), minDays: Number(minDays) });
     return res.status(201).json(rule);
   } catch (error) {
     logger.error('addPolicyRule error:', error);
@@ -260,8 +268,13 @@ export const addPolicyRule = async (req: AuthRequest, res: Response): Promise<an
 export const updatePolicyRule = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['ruleId']);
-    const { minDays, operator, approvalRequired, noticeRequired, minNoticeDays, exception } =
+    const { minDays, operator, approvalRequired, noticeRequired, minNoticeDays, exception, applicableLeaveTypes } =
       req.body as Record<string, any>;
+
+    const validLeaveTypesUpd = ['SICK', 'TRANSPORT_WEATHER', 'PERSONAL'];
+    const sanitizedLeaveTypesUpd = Array.isArray(applicableLeaveTypes)
+      ? applicableLeaveTypes.filter((t: string) => validLeaveTypesUpd.includes(t))
+      : undefined;
 
     if (operator !== undefined && !VALID_OPERATORS.includes(operator)) {
       return res.status(400).json({ message: `Invalid operator. Must be one of: ${VALID_OPERATORS.join(', ')}` });
@@ -279,9 +292,11 @@ export const updatePolicyRule = async (req: AuthRequest, res: Response): Promise
         ...(noticeRequired !== undefined && { noticeRequired: Boolean(noticeRequired) }),
         ...(minNoticeDays !== undefined && { minNoticeDays: Number(minNoticeDays) }),
         ...(exception !== undefined && { exception: exception || null }),
+        ...(sanitizedLeaveTypesUpd !== undefined && { applicableLeaveTypes: sanitizedLeaveTypesUpd as any[] }),
       },
     });
 
+    audit(req, 'POLICY_RULE_UPDATED', 'POLICY', id, { policyName: existing.policyId });
     return res.json(updated);
   } catch (error) {
     logger.error('updatePolicyRule error:', error);
@@ -365,6 +380,7 @@ export const createWfhPolicy = async (req: AuthRequest, res: Response): Promise<
       },
     });
 
+    audit(req, 'WFH_POLICY_CREATED', 'POLICY', policy.id, { name: policy.name, daysAllowed: policy.daysAllowed });
     return res.status(201).json(policy);
   } catch (error) {
     logger.error('createWfhPolicy error:', error);
@@ -375,12 +391,8 @@ export const createWfhPolicy = async (req: AuthRequest, res: Response): Promise<
 export const updateWfhPolicy = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
-    const { name, daysAllowed, approvalRequired, noticeRequired, minNoticeDays, halfDayAllowed, probationRule, confirmPassword } =
+    const { name, daysAllowed, approvalRequired, noticeRequired, minNoticeDays, halfDayAllowed, probationRule } =
       req.body as Record<string, any>;
-
-    if (!(await verifyAdminPassword(req.user!.userId, confirmPassword))) {
-      return res.status(401).json({ message: 'Invalid password. Action unauthorized.' });
-    }
 
     const existing = await prisma.wfhPolicy.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ message: 'WFH Policy not found' });
@@ -405,6 +417,7 @@ export const updateWfhPolicy = async (req: AuthRequest, res: Response): Promise<
       },
     });
 
+    audit(req, 'WFH_POLICY_UPDATED', 'POLICY', id, { name: updated.name });
     return res.json(updated);
   } catch (error) {
     logger.error('updateWfhPolicy error:', error);
@@ -415,11 +428,6 @@ export const updateWfhPolicy = async (req: AuthRequest, res: Response): Promise<
 export const deleteWfhPolicy = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
-    const { confirmPassword } = req.body as { confirmPassword?: string };
-
-    if (!(await verifyAdminPassword(req.user!.userId, confirmPassword))) {
-      return res.status(401).json({ message: 'Invalid password. Action unauthorized.' });
-    }
 
     const assignedCount = await prisma.employee.count({ where: { wfhPolicyId: id } });
     if (assignedCount > 0) {
@@ -428,7 +436,9 @@ export const deleteWfhPolicy = async (req: AuthRequest, res: Response): Promise<
       });
     }
 
+    const deletedWfh = await prisma.wfhPolicy.findUnique({ where: { id }, select: { name: true } });
     await prisma.wfhPolicy.delete({ where: { id } });
+    audit(req, 'WFH_POLICY_DELETED', 'POLICY', id, { name: deletedWfh?.name ?? id });
     return res.json({ message: 'WFH policy deleted' });
   } catch (error) {
     logger.error('deleteWfhPolicy error:', error);

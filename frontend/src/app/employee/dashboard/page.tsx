@@ -64,6 +64,9 @@ interface DashboardData {
     workingSchedule?: { workingDays: string[]; saturdayRule: string } | null;
     probationMonths?: number;
     dateOfJoining?: string | null;
+    isOnNoticePeriod?: boolean;
+    noticePeriodEnd?: string | null;
+    earlyReleaseDate?: string | null;
   };
   currentMonth: number;
   currentYear: number;
@@ -296,8 +299,51 @@ export default function EmployeeDashboard() {
     PERSONAL: "text-purple-600 bg-purple-50 dark:bg-purple-900/20",
   };
 
+  // Notice period banner calculation
+  const noticeDaysLeft = (() => {
+    if (!employee.isOnNoticePeriod) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const endDate = employee.noticePeriodEnd ? new Date(employee.noticePeriodEnd) : null;
+    const earlyDate = employee.earlyReleaseDate ? new Date(employee.earlyReleaseDate) : null;
+    const effectiveEnd = earlyDate && endDate && earlyDate < endDate ? earlyDate : endDate;
+    if (!effectiveEnd) return null;
+    return Math.max(0, Math.ceil((effectiveEnd.getTime() - today.getTime()) / 86400000));
+  })();
+
   return (
     <div className="space-y-6">
+      {/* Notice period banner */}
+      {employee.isOnNoticePeriod && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+          <div className="h-9 w-9 rounded-xl bg-red-100 dark:bg-red-900/40 flex items-center justify-center shrink-0">
+            <span className="text-lg">⚠️</span>
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-red-700 dark:text-red-400">
+              You are on notice period
+              {noticeDaysLeft !== null && (
+                <span className="ml-2 font-normal text-red-600 dark:text-red-400">
+                  — {noticeDaysLeft} day{noticeDaysLeft !== 1 ? "s" : ""} remaining
+                </span>
+              )}
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
+              Leave and WFH applications are blocked during this period. Contact HR for any exceptions.
+            </p>
+            {employee.noticePeriodEnd && (
+              <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                Last working day:{" "}
+                <strong>
+                  {new Date(employee.earlyReleaseDate ?? employee.noticePeriodEnd).toLocaleDateString("en-IN", {
+                    day: "2-digit", month: "long", year: "numeric",
+                  })}
+                </strong>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Greeting */}
       <div>
         <h2 className="text-2xl font-heading font-bold text-slate-900 dark:text-white">

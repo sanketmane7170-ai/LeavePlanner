@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
+import { audit } from '../services/auditService';
 
 // ── GET /api/admin/admins ──────────────────────────────────────────────────
 export const getAdmins = async (req: AuthRequest, res: Response): Promise<any> => {
@@ -90,8 +91,9 @@ export const promoteAdmin = async (req: AuthRequest, res: Response): Promise<any
       }
     });
 
-    return res.json({ 
-      message: `${updatedUser.employee?.fullName || updatedUser.email} has been promoted to Admin.` 
+    audit(req, 'ADMIN_CREATED', 'ADMIN', userId, { fullName: updatedUser.employee?.fullName ?? updatedUser.email, email: updatedUser.email });
+    return res.json({
+      message: `${updatedUser.employee?.fullName || updatedUser.email} has been promoted to Admin.`
     });
   } catch (error) {
     logger.error('promoteAdmin error:', error);
@@ -134,8 +136,9 @@ export const demoteAdmin = async (req: AuthRequest, res: Response): Promise<any>
       }
     });
 
-    return res.json({ 
-      message: `${updatedUser.employee?.fullName || updatedUser.email} has been demoted to Employee.` 
+    audit(req, 'ADMIN_STATUS_CHANGED', 'ADMIN', userId, { fullName: updatedUser.employee?.fullName ?? updatedUser.email, isActive: false });
+    return res.json({
+      message: `${updatedUser.employee?.fullName || updatedUser.email} has been demoted to Employee.`
     });
   } catch (error) {
     logger.error('demoteAdmin error:', error);

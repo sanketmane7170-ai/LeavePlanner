@@ -3,7 +3,13 @@ import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { prisma } from '../lib/prisma';
 import type { AuthRequest } from '../middleware/authenticate';
-import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService';
+import {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendNoticePeriodEmployeeEmail,
+  sendNoticePeriodManagerEmail,
+} from '../services/emailService';
+import { audit } from '../services/auditService';
 import { createNotification } from '../services/notificationService';
 import { logger } from '../lib/logger';
 
@@ -123,6 +129,8 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       probationMonths = 6,
       reportingManagerId,
       canViewTeamCalendar = false,
+      leavePolicyId,
+      wfhPolicyId,
     } = req.body as {
       fullName: string;
       email: string;
@@ -135,6 +143,8 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       probationMonths?: number;
       reportingManagerId?: string;
       canViewTeamCalendar?: boolean;
+      leavePolicyId?: string;
+      wfhPolicyId?: string;
     };
 
     if (!fullName || !email) {
@@ -172,6 +182,8 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
             probationMonths: Number(probationMonths),
             reportingManagerId: reportingManagerId || undefined,
             canViewTeamCalendar: Boolean(canViewTeamCalendar),
+            leavePolicyId: leavePolicyId || undefined,
+            wfhPolicyId: wfhPolicyId || undefined,
           },
         },
       },
@@ -184,6 +196,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<a
       logger.error('Welcome email failed:', emailErr);
     }
 
+    audit(req, 'EMPLOYEE_CREATED', 'EMPLOYEE', (user.employee as any)?.id ?? 'new', { fullName, employeeId, email: normalizedEmail });
     return res.status(201).json({
       message: 'Employee created successfully',
       employee: user.employee,
@@ -211,9 +224,22 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
       leavePolicyId,
       wfhPolicyId,
       canViewTeamCalendar,
+      // Notice period fields
+      noticePeriodStart,
+      noticePeriodEnd,
+      noticePeriodType,
+      earlyReleaseDate,
+      allowLeaveOverride,
+      clearNoticePeriod,
     } = req.body as Record<string, any>;
 
-    const employee = await prisma.employee.findUnique({ where: { id } });
+    const employee = await prisma.employee.findUnique({
+      where: { id },
+      include: {
+        user: { select: { email: true } },
+        reportingManager: { include: { user: { select: { email: true } } } },
+      },
+    });
     if (!employee) {
       return res.status(404).json({ message: 'Employee not found' });
     }
@@ -221,6 +247,10 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
     const previousLeavePolicyId = employee.leavePolicyId;
     const previousWfhPolicyId = employee.wfhPolicyId;
     const isBeingDeactivated = isActive !== undefined && Boolean(isActive) === false && employee.isActive === true;
+
+    // Determine notice period update
+    const settingNotice = noticePeriodStart !== undefined && noticePeriodEnd !== undefined && !clearNoticePeriod;
+    const clearingNotice = clearNoticePeriod === true;
 
     const updated = await prisma.employee.update({
       where: { id },
@@ -244,11 +274,32 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
         ...(leavePolicyId !== undefined && { leavePolicyId: leavePolicyId || null }),
         ...(wfhPolicyId !== undefined && { wfhPolicyId: wfhPolicyId || null }),
         ...(canViewTeamCalendar !== undefined && { canViewTeamCalendar: Boolean(canViewTeamCalendar) }),
+        // Notice period
+        ...(settingNotice && {
+          isOnNoticePeriod:  true,
+          noticePeriodStart: new Date(String(noticePeriodStart)),
+          noticePeriodEnd:   new Date(String(noticePeriodEnd)),
+          noticePeriodType:  noticePeriodType || 'RESIGNED',
+          earlyReleaseDate:  earlyReleaseDate ? new Date(String(earlyReleaseDate)) : null,
+          allowLeaveOverride: allowLeaveOverride !== undefined ? Boolean(allowLeaveOverride) : false,
+        }),
+        ...(clearingNotice && {
+          isOnNoticePeriod:  false,
+          noticePeriodStart: null,
+          noticePeriodEnd:   null,
+          noticePeriodType:  null,
+          earlyReleaseDate:  null,
+          allowLeaveOverride: false,
+        }),
+        ...(allowLeaveOverride !== undefined && !settingNotice && !clearingNotice && {
+          allowLeaveOverride: Boolean(allowLeaveOverride),
+        }),
       },
       include: {
         user: { select: { email: true, role: true } },
         leavePolicy: true,
         wfhPolicy: true,
+        reportingManager: { include: { user: { select: { email: true } } } },
       },
     });
 
@@ -261,6 +312,11 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
         where: { id: employee.userId },
         data: { tokenVersion: { increment: 1 } },
       });
+      audit(req, 'EMPLOYEE_DEACTIVATED', 'EMPLOYEE', id, { fullName: updated.fullName, employeeId: updated.employeeId });
+    } else if (isActive !== undefined && Boolean(isActive) === true && !employee.isActive) {
+      audit(req, 'EMPLOYEE_ACTIVATED', 'EMPLOYEE', id, { fullName: updated.fullName, employeeId: updated.employeeId });
+    } else if (fullName !== undefined || mobile !== undefined || department !== undefined || designation !== undefined || probationMonths !== undefined) {
+      audit(req, 'EMPLOYEE_UPDATED', 'EMPLOYEE', id, { fullName: updated.fullName, employeeId: updated.employeeId, changes: [fullName && 'name', mobile && 'mobile', department && 'department', designation && 'designation', probationMonths && 'probation'].filter(Boolean) });
     }
 
     // Policy removed → archive all current-year active balances for this employee
@@ -305,6 +361,62 @@ export const updateEmployee = async (req: AuthRequest, res: Response): Promise<a
           '/employee/my-leaves'
         );
       }
+    }
+
+    // Notice period set → send emails + notification + audit log
+    if (settingNotice) {
+      const fmt = (d: Date) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const startStr = fmt(new Date(String(noticePeriodStart)));
+      const endStr   = fmt(new Date(String(noticePeriodEnd)));
+      const earlyStr = earlyReleaseDate ? fmt(new Date(String(earlyReleaseDate))) : null;
+      const empEmail = (employee as any).user?.email as string | undefined;
+
+      if (empEmail) {
+        sendNoticePeriodEmployeeEmail(
+          empEmail,
+          { fullName: updated.fullName, employeeId: updated.employeeId },
+          { noticeType: noticePeriodType || 'RESIGNED', startDate: startStr, endDate: endStr, earlyReleaseDate: earlyStr }
+        ).catch((e) => logger.error('Notice period employee email failed:', e));
+      }
+
+      const managerEmail = (updated as any).reportingManager?.user?.email as string | undefined;
+      if (managerEmail) {
+        sendNoticePeriodManagerEmail(
+          managerEmail,
+          (updated as any).reportingManager?.fullName ?? 'Manager',
+          { fullName: updated.fullName, employeeId: updated.employeeId, department: updated.department },
+          { noticeType: noticePeriodType || 'RESIGNED', startDate: startStr, endDate: endStr }
+        ).catch((e) => logger.error('Notice period manager email failed:', e));
+      }
+
+      await createNotification(
+        updated.userId,
+        'NOTICE_PERIOD',
+        `Your notice period has been confirmed. Start: ${startStr} — End: ${endStr}. Leave and WFH applications are blocked during this period.`,
+        '/employee/dashboard'
+      );
+
+      prisma.auditLog.create({
+        data: {
+          adminId:    req.user!.userId,
+          action:     'NOTICE_PERIOD_SET',
+          targetType: 'EMPLOYEE',
+          targetId:   id,
+          meta: JSON.stringify({ noticeType: noticePeriodType, startDate: startStr, endDate: endStr }),
+        },
+      }).catch(() => {});
+    }
+
+    if (clearingNotice) {
+      prisma.auditLog.create({
+        data: {
+          adminId:    req.user!.userId,
+          action:     'NOTICE_PERIOD_CLEARED',
+          targetType: 'EMPLOYEE',
+          targetId:   id,
+          meta:       null,
+        },
+      }).catch(() => {});
     }
 
     return res.json({ message: 'Employee updated successfully', employee: updated });
@@ -557,6 +669,158 @@ export const getEmployeeBalanceSummary = async (req: AuthRequest, res: Response)
     });
   } catch (error) {
     logger.error('getEmployeeBalanceSummary error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── GET /api/admin/employees/allowances ──────────────────────────────────────
+export const getAllowanceOverview = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const year = new Date().getFullYear();
+    const yearStart = new Date(year, 0, 1, 0, 0, 0, 0);
+    const yearEnd   = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    const employees = await prisma.employee.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        fullName: true,
+        mobile: true,
+        user:              { select: { email: true } },
+        wfhPolicy:         { select: { id: true, daysAllowed: true, name: true } },
+        wfhPolicyId:       true,
+        wfhPolicyExceptions: { select: { id: true, policyId: true, overrideDays: true } },
+        leaveBalances: {
+          where: { year, isArchived: false },
+          select: { id: true, leaveType: true, totalDays: true, usedDays: true, remainingDays: true },
+        },
+      },
+      orderBy: { fullName: 'asc' },
+    });
+
+    // Batch-fetch approved WFH days per employee for this year
+    const wfhAgg = await prisma.wfhApplication.groupBy({
+      by: ['employeeId'],
+      where: { status: 'APPROVED', date: { gte: yearStart, lte: yearEnd } },
+      _sum: { totalDays: true },
+    });
+    const wfhUsedMap: Record<string, number> = {};
+    for (const row of wfhAgg) wfhUsedMap[row.employeeId] = row._sum.totalDays ?? 0;
+
+    const data = employees.map((emp) => {
+      const lb = emp.leaveBalances[0] ?? null;
+      const exception = emp.wfhPolicyExceptions.find((ex) => ex.policyId === emp.wfhPolicyId);
+      const wfhAllowance = exception ? exception.overrideDays : (emp.wfhPolicy?.daysAllowed ?? 0);
+      const consumedWfh  = wfhUsedMap[emp.id] ?? 0;
+      const remainingWfh = Math.max(0, wfhAllowance - consumedWfh);
+
+      return {
+        id:              emp.id,
+        fullName:        emp.fullName,
+        email:           emp.user.email,
+        mobile:          emp.mobile ?? null,
+        leaveAllowance:  lb?.totalDays ?? 0,
+        consumedLeave:   lb?.usedDays ?? 0,
+        remainingLeave:  lb?.remainingDays ?? 0,
+        wfhAllowance,
+        consumedWfh,
+        remainingWfh,
+        hasLeaveBalance: !!lb,
+        hasWfhPolicy:    !!emp.wfhPolicy,
+      };
+    });
+
+    return res.json({ data, year });
+  } catch (error) {
+    logger.error('getAllowanceOverview error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── PATCH /api/admin/employees/:id/allowance ──────────────────────────────────
+export const updateEmployeeAllowance = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id = String(req.params['id']);
+    const { leaveAllowance, wfhAllowance } = req.body;
+
+    const employee = await prisma.employee.findUnique({
+      where: { id },
+      include: {
+        wfhPolicy:           { select: { id: true } },
+        wfhPolicyExceptions: { select: { id: true, policyId: true } },
+      },
+    });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    const year = new Date().getFullYear();
+    const updates: string[] = [];
+
+    if (leaveAllowance !== undefined) {
+      const newTotal = parseFloat(leaveAllowance);
+      if (isNaN(newTotal) || newTotal < 0) {
+        return res.status(400).json({ message: 'Invalid leaveAllowance value' });
+      }
+
+      const lb = await prisma.leaveBalance.findFirst({
+        where: { employeeId: id, year, isArchived: false },
+      });
+
+      if (lb) {
+        const newRemaining = Math.max(0, newTotal - lb.usedDays);
+        await prisma.leaveBalance.update({
+          where: { id: lb.id },
+          data: { totalDays: newTotal, remainingDays: newRemaining },
+        });
+      } else {
+        await prisma.leaveBalance.create({
+          data: {
+            employeeId:   id,
+            leaveType:    'GENERAL',
+            year,
+            totalDays:    newTotal,
+            usedDays:     0,
+            remainingDays: newTotal,
+          },
+        });
+      }
+      updates.push('leave');
+    }
+
+    if (wfhAllowance !== undefined) {
+      if (!employee.wfhPolicyId) {
+        return res.status(400).json({ message: 'Employee has no WFH policy assigned' });
+      }
+      const newAllowed = parseFloat(wfhAllowance);
+      if (isNaN(newAllowed) || newAllowed < 0) {
+        return res.status(400).json({ message: 'Invalid wfhAllowance value' });
+      }
+
+      const exception = employee.wfhPolicyExceptions.find((ex) => ex.policyId === employee.wfhPolicyId);
+      const farPast   = new Date('2000-01-01');
+      const farFuture = new Date('2099-12-31');
+
+      if (exception) {
+        await prisma.wfhPolicyException.update({
+          where: { id: exception.id },
+          data:  { overrideDays: newAllowed },
+        });
+      } else {
+        await prisma.wfhPolicyException.create({
+          data: {
+            policyId:     employee.wfhPolicyId,
+            employeeId:   id,
+            overrideDays: newAllowed,
+            blackoutFrom: farPast,
+            blackoutTo:   farFuture,
+          },
+        });
+      }
+      updates.push('wfh');
+    }
+
+    return res.json({ message: `Allowance updated: ${updates.join(', ')}` });
+  } catch (error) {
+    logger.error('updateEmployeeAllowance error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

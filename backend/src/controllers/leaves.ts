@@ -25,7 +25,7 @@ async function getEmployeeForUser(userId: string) {
       policyExceptions: true,
       user:             { select: { email: true } },
     },
-  });
+  }) as any;
 }
 
 function evaluateOperator(totalDays: number, operator: string, threshold: number): boolean {
@@ -187,6 +187,20 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
     if (!employee.leavePolicy) {
       return res.status(400).json({ message: 'No leave policy assigned. Please contact your administrator.' });
     }
+
+    // Notice period block
+    if ((employee as any).isOnNoticePeriod && !(employee as any).allowLeaveOverride) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const early = (employee as any).earlyReleaseDate ? new Date((employee as any).earlyReleaseDate) : null;
+      const end   = (employee as any).noticePeriodEnd  ? new Date((employee as any).noticePeriodEnd)  : null;
+      const effectiveEnd = early && early < (end ?? early) ? early : end;
+      const start = (employee as any).noticePeriodStart ? new Date((employee as any).noticePeriodStart) : null;
+      if (start && effectiveEnd && today >= start && today <= effectiveEnd) {
+        return res.status(403).json({
+          message: 'Leave applications are not permitted during your notice period. Please contact HR if you have an emergency.',
+        });
+      }
+    }
     // Only restrict type if policy is explicitly tied to a specific leave type (not GENERAL)
     if (employee.leavePolicy.leaveType !== 'GENERAL' && employee.leavePolicy.leaveType !== leaveType) {
       return res.status(400).json({ message: `Your policy covers "${employee.leavePolicy.leaveType}" leave only.` });
@@ -265,8 +279,8 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
       }
     }
 
-    const blackout = employee.policyExceptions.find(
-      (ex) =>
+    const blackout = (employee.policyExceptions as any[]).find(
+      (ex: any) =>
         ex.policyId === employee.leavePolicyId &&
         new Date(ex.blackoutFrom) <= to &&
         new Date(ex.blackoutTo) >= from

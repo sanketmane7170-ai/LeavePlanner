@@ -363,3 +363,37 @@ export async function sendAdminImportedLeaveEmail(
     myLeavesUrl:  `${APP_URL}/employee/my-leaves`,
   });
 }
+
+export async function sendNoticePeriodEmployeeEmail(
+  to: string,
+  employee: { fullName: string; employeeId: string },
+  notice: { noticeType: string; startDate: string; endDate: string; earlyReleaseDate?: string | null }
+): Promise<void> {
+  const typeLabels: Record<string, string> = { RESIGNED: 'Resigned', TERMINATED: 'Terminated', MUTUAL: 'Mutual Separation' };
+  await send(to, 'NOTICE_PERIOD_STARTED', {
+    employeeName:     employee.fullName,
+    employeeId:       employee.employeeId,
+    noticeType:       typeLabels[notice.noticeType] ?? notice.noticeType,
+    startDate:        notice.startDate,
+    endDate:          notice.endDate,
+    earlyReleaseDate: notice.earlyReleaseDate ?? 'Not applicable',
+  });
+}
+
+export async function sendNoticePeriodManagerEmail(
+  to: string,
+  managerName: string,
+  employee: { fullName: string; employeeId: string; department?: string | null },
+  notice: { noticeType: string; startDate: string; endDate: string }
+): Promise<void> {
+  const typeLabels: Record<string, string> = { RESIGNED: 'Resigned', TERMINATED: 'Terminated', MUTUAL: 'Mutual Separation' };
+  await send(to, 'NOTICE_PERIOD_MANAGER', {
+    managerName,
+    employeeName: employee.fullName,
+    employeeId:   employee.employeeId,
+    department:   employee.department ?? '—',
+    noticeType:   typeLabels[notice.noticeType] ?? notice.noticeType,
+    startDate:    notice.startDate,
+    endDate:      notice.endDate,
+  });
+}

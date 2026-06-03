@@ -18,6 +18,8 @@ import {
   LifeBuoy,
   BarChart2,
   Megaphone,
+  SlidersHorizontal,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +51,17 @@ const adminNav: NavItem[] = [
       { href: "/admin/leave-requests/wfh", label: "WFH Requests" },
     ]
   },
+  { href: "/admin/allowance-manager", label: "Allowance Manager", icon: SlidersHorizontal },
+  {
+    href: "/admin/attendance",
+    label: "Attendance",
+    icon: ClipboardCheck,
+    children: [
+      { href: "/admin/attendance/muster",          label: "Muster View"     },
+      { href: "/admin/attendance/monthly-summary", label: "Monthly Summary" },
+    ],
+  },
+  { href: "/admin/system-logs",   label: "System Logs",   icon: ClipboardList   },
   { href: "/admin/support",       label: "Support",       icon: LifeBuoy        },
   { href: "/admin/announcements", label: "Announcements", icon: Megaphone       },
   { 

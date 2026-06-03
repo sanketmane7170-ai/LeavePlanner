@@ -365,4 +365,79 @@ ${BTN('View My Leaves', '{{myLeavesUrl}}')}
       { name: 'myLeavesUrl',  description: 'Link to employee my-leaves page',               example: 'http://localhost:3005/employee/my-leaves' },
     ],
   },
+
+  {
+    key: 'NOTICE_PERIOD_STARTED', name: 'Notice Period — Employee Notification',
+    description: 'Sent to the employee when admin sets their notice period.',
+    category: 'EMPLOYEE',
+    subject: '{{orgName}} — Your Notice Period Has Been Confirmed',
+    bodyHtml: WRAP('{{orgName}}', 'HR · Notice Period Confirmation', `
+${INTRO('Dear <strong>{{employeeName}}</strong>,<br><br>This email is to formally confirm that your notice period has been recorded in the system. Please review the details below carefully.')}
+${SECTION('Notice Period Details')}
+${TABLE(
+  ROW('Employee', '{{employeeName}}') +
+  ROW('Employee ID', '{{employeeId}}') +
+  ROW('Notice Type', '{{noticeType}}') +
+  ROW('Start Date', '{{startDate}}') +
+  ROW('End Date', '{{endDate}}') +
+  ROW('Early Release', '{{earlyReleaseDate}}', true)
+)}
+<div style="background:#FEF3C7;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:6px;padding:16px 18px;margin:0 0 24px 0;">
+  <p style="margin:0 0 8px 0;color:#92400E;font-size:13px;font-weight:700;">Important Restrictions During Notice Period</p>
+  <ul style="margin:0;padding-left:18px;color:#78350F;font-size:13px;line-height:1.8;">
+    <li>Leave applications are <strong>not permitted</strong> during the notice period.</li>
+    <li>Work From Home (WFH) requests are <strong>not permitted</strong> during the notice period.</li>
+    <li>Please ensure a proper handover of responsibilities before your last working day.</li>
+  </ul>
+</div>
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">If you have any questions or concerns, please contact your HR administrator or reporting manager directly.</p>
+`),
+    variables: [
+      { name: 'orgName',          description: 'Organization name',                    example: 'Innovizia'         },
+      { name: 'employeeName',     description: "Employee's full name",                 example: 'Rahul Mehta'       },
+      { name: 'employeeId',       description: 'Employee ID code',                     example: 'INV-0012'          },
+      { name: 'noticeType',       description: 'Type of notice (Resigned / Terminated / Mutual)', example: 'Resigned'  },
+      { name: 'startDate',        description: 'Notice period start date',             example: '01/07/2026'        },
+      { name: 'endDate',          description: 'Notice period end date',               example: '31/07/2026'        },
+      { name: 'earlyReleaseDate', description: 'Early release date if applicable, else "Not applicable"', example: 'Not applicable' },
+    ],
+  },
+
+  {
+    key: 'NOTICE_PERIOD_MANAGER', name: 'Notice Period — Manager Notification',
+    description: 'Sent to the reporting manager when one of their direct reports enters notice period.',
+    category: 'ADMIN',
+    subject: '{{orgName}} — Notice Period: {{employeeName}}',
+    bodyHtml: WRAP('{{orgName}}', 'HR · Manager Notification', `
+${INTRO('Hello <strong>{{managerName}}</strong>,<br><br>This is to inform you that your team member <strong>{{employeeName}}</strong> has entered their notice period. Please plan for a smooth handover.')}
+${SECTION('Employee Details')}
+${TABLE(
+  ROW('Employee', '{{employeeName}}') +
+  ROW('Employee ID', '{{employeeId}}') +
+  ROW('Department', '{{department}}') +
+  ROW('Notice Type', '{{noticeType}}') +
+  ROW('Start Date', '{{startDate}}') +
+  ROW('Last Working Day', '{{endDate}}', true)
+)}
+<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-left:4px solid #3B82F6;border-radius:6px;padding:16px 18px;margin:0 0 24px 0;">
+  <p style="margin:0 0 6px 0;color:#1E3A5F;font-size:13px;font-weight:700;">Action Required</p>
+  <ul style="margin:0;padding-left:18px;color:#1E40AF;font-size:13px;line-height:1.8;">
+    <li>Please schedule a knowledge transfer session with {{employeeName}}.</li>
+    <li>Leave and WFH applications from this employee are blocked during the notice period.</li>
+    <li>Ensure all ongoing work is properly handed over before the last working day.</li>
+  </ul>
+</div>
+`),
+    variables: [
+      { name: 'orgName',      description: 'Organization name',         example: 'Innovizia'     },
+      { name: 'managerName',  description: "Reporting manager's name",  example: 'Anita Desai'   },
+      { name: 'employeeName', description: "Employee's full name",      example: 'Rahul Mehta'   },
+      { name: 'employeeId',   description: 'Employee ID',               example: 'INV-0012'      },
+      { name: 'department',   description: 'Department name',           example: 'Engineering'   },
+      { name: 'noticeType',   description: 'Notice type',               example: 'Resigned'      },
+      { name: 'startDate',    description: 'Notice start date',         example: '01/07/2026'    },
+      { name: 'endDate',      description: 'Last working day',          example: '31/07/2026'    },
+    ],
+  },
 ];

@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
+import { audit } from '../services/auditService';
 
 const VALID_SATURDAY_RULES = [
   'NONE', 'ALL', 'FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIRST_THIRD', 'SECOND_FOURTH',
@@ -68,6 +69,7 @@ export const upsertSchedule = async (req: AuthRequest, res: Response): Promise<a
       },
     });
 
+    audit(req, 'WORKING_SCHEDULE_UPDATED', 'EMPLOYEE', employeeId, { employeeName: employee.fullName, workingDays, saturdayRule });
     return res.json({ message: 'Schedule saved', schedule });
   } catch (error) {
     logger.error('upsertSchedule error:', error);

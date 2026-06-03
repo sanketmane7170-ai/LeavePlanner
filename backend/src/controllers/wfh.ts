@@ -21,7 +21,7 @@ async function getEmployeeForUser(userId: string) {
       wfhPolicyExceptions: true,
       user:            { select: { email: true } },
     },
-  });
+  }) as any;
 }
 
 function startOfMonth(year: number, month: number): Date {
@@ -73,7 +73,7 @@ export const getWfhBalance = async (req: AuthRequest, res: Response): Promise<an
       .filter((a) => a.status === 'PENDING')
       .reduce((s, a) => s + a.totalDays, 0);
 
-    const exception = employee.wfhPolicyExceptions?.find((ex) => ex.policyId === employee.wfhPolicyId);
+    const exception = (employee.wfhPolicyExceptions as any[])?.find((ex: any) => ex.policyId === employee.wfhPolicyId);
     const baseDays = employee.wfhPolicy ? employee.wfhPolicy.daysAllowed : 0;
     const allowedDays = exception ? exception.overrideDays : baseDays;
 
@@ -135,6 +135,20 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
     if (!employee.wfhPolicy) {
       return res.status(400).json({ message: 'No WFH policy assigned. Please contact your administrator.' });
+    }
+
+    // Notice period block
+    if ((employee as any).isOnNoticePeriod) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const early = (employee as any).earlyReleaseDate ? new Date((employee as any).earlyReleaseDate) : null;
+      const end   = (employee as any).noticePeriodEnd  ? new Date((employee as any).noticePeriodEnd)  : null;
+      const effectiveEnd = early && early < (end ?? early) ? early : end;
+      const start = (employee as any).noticePeriodStart ? new Date((employee as any).noticePeriodStart) : null;
+      if (start && effectiveEnd && today >= start && today <= effectiveEnd) {
+        return res.status(403).json({
+          message: 'WFH requests are not permitted during your notice period. Please contact HR if you need an exception.',
+        });
+      }
     }
 
     const fromDate = new Date(dateStr);
@@ -210,8 +224,8 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
     }
 
     // Blackout check
-    const blackout = employee.wfhPolicyExceptions.find(
-      (ex) =>
+    const blackout = (employee.wfhPolicyExceptions as any[]).find(
+      (ex: any) =>
         ex.policyId === employee.wfhPolicyId &&
         new Date(ex.blackoutFrom) <= toDate &&
         new Date(ex.blackoutTo) >= fromDate
@@ -232,7 +246,7 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
     });
     const usedPlusPending = wfhThisYear.reduce((s, a) => s + a.totalDays, 0);
 
-    const exception = employee.wfhPolicyExceptions?.find((ex) => ex.policyId === employee.wfhPolicyId);
+    const exception = (employee.wfhPolicyExceptions as any[])?.find((ex: any) => ex.policyId === employee.wfhPolicyId);
     const baseDays = employee.wfhPolicy.daysAllowed;
     const allowedDays = exception ? exception.overrideDays : baseDays;
 
@@ -363,7 +377,7 @@ export const getMyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
 export const getAdminWfh = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const {
-      status, search,
+      status, search, employeeId,
       year    = String(new Date().getFullYear()),
       dateFrom, dateTo,
       page    = '1',
@@ -377,6 +391,7 @@ export const getAdminWfh = async (req: AuthRequest, res: Response): Promise<any>
     const where: Record<string, any> = {
       date: { gte: new Date(`${yr}-01-01`), lte: new Date(`${yr}-12-31`) },
     };
+    if (employeeId) where['employeeId'] = employeeId;
     if (status) where['status'] = status;
     if (dateFrom && dateTo) {
       where['date'] = { gte: new Date(dateFrom), lte: new Date(dateTo) };

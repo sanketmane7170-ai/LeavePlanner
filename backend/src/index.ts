@@ -27,10 +27,13 @@ import adminsRoutes from './routes/admins';
 import supportRoutes from './routes/support';
 import adminSupportRoutes from './routes/adminSupport';
 import announcementRoutes from './routes/announcements';
+import attendanceRoutes from './routes/attendance';
+import systemLogsRoutes from './routes/systemLogs';
 import { startAbsentCron } from './services/absentCron';
 import { startBackupCron } from './services/backupCron';
 import { startMonthlyCron } from './services/monthlyCron';
 import { startAnnouncementCron } from './services/announcementCron';
+import { startNoticePeriodCron } from './services/noticePeriodCron';
 import { seedEmailTemplates } from './services/emailTemplateSeed';
 
 const app = express();
@@ -112,6 +115,8 @@ app.use('/api/admin/settings',   settingsRoutes);
 app.use('/api/admin/admins',     adminsRoutes);
 app.use('/api/admin/support',    adminSupportRoutes);
 app.use('/api/admin/announcements', announcementRoutes);
+app.use('/api/admin/attendance',   attendanceRoutes);
+app.use('/api/admin/system-logs',  systemLogsRoutes);
 app.use('/api/support',          supportRoutes);
 app.use('/api/employee/portal',  employeePortalRoutes);
 app.use('/api/notifications',    notificationRoutes);
@@ -141,6 +146,7 @@ const server = app.listen(PORT, () => {
   startBackupCron();
   startMonthlyCron();
   startAnnouncementCron();
+  startNoticePeriodCron();
   seedEmailTemplates().catch((e) => logger.error('[emailTemplateSeed]', e));
 });
 

@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
 import type { AuthRequest } from '../middleware/authenticate';
 import { logger } from '../lib/logger';
+import { audit } from '../services/auditService';
 
 // ── ADMIN CONTROLLERS ────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ export const createAnnouncement = async (req: AuthRequest, res: Response): Promi
       },
     });
 
+    audit(req, 'ANNOUNCEMENT_CREATED', 'ANNOUNCEMENT', announcement.id, { title: announcement.title, priority: announcement.priority });
     return res.status(201).json({
       message: 'Announcement created successfully',
       announcement,
@@ -82,6 +84,7 @@ export const updateAnnouncement = async (req: AuthRequest, res: Response): Promi
       },
     });
 
+    audit(req, 'ANNOUNCEMENT_UPDATED', 'ANNOUNCEMENT', id, { title: announcement.title });
     return res.json({
       message: 'Announcement updated successfully',
       announcement,
@@ -102,7 +105,7 @@ export const deleteAnnouncement = async (req: AuthRequest, res: Response): Promi
     }
 
     await prisma.announcement.delete({ where: { id } });
-
+    audit(req, 'ANNOUNCEMENT_DELETED', 'ANNOUNCEMENT', id, { title: existing.title });
     return res.json({ message: 'Announcement deleted successfully' });
   } catch (error) {
     logger.error('deleteAnnouncement error:', error);

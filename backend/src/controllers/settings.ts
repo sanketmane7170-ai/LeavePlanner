@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
 import type { AuthRequest } from '../middleware/authenticate';
+import { audit } from '../services/auditService';
 
 // ── Org Settings ──────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ export const updateOrgSettings = async (req: AuthRequest, res: Response): Promis
       },
     });
 
+    audit(req, 'ORG_SETTINGS_UPDATED', 'SETTINGS', 'global', { orgName, timezone });
     return res.json({ message: 'Settings updated', settings });
   } catch (error) {
     logger.error('updateOrgSettings error:', error);
@@ -66,6 +68,7 @@ export const addHoliday = async (req: AuthRequest, res: Response): Promise<any> 
     const holiday = await prisma.publicHoliday.create({
       data: { date: d, name, year },
     });
+    audit(req, 'HOLIDAY_CREATED', 'SETTINGS', holiday.id, { name, date });
     return res.status(201).json(holiday);
   } catch (error) {
     logger.error('addHoliday error:', error);
@@ -76,7 +79,9 @@ export const addHoliday = async (req: AuthRequest, res: Response): Promise<any> 
 export const deleteHoliday = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
+    const h = await prisma.publicHoliday.findUnique({ where: { id }, select: { name: true, date: true } });
     await prisma.publicHoliday.delete({ where: { id } });
+    audit(req, 'HOLIDAY_DELETED', 'SETTINGS', id, { name: h?.name ?? id });
     return res.json({ message: 'Holiday deleted' });
   } catch (error) {
     logger.error('deleteHoliday error:', error);
@@ -107,6 +112,7 @@ export const addDepartment = async (req: AuthRequest, res: Response): Promise<an
     if (existing) return res.status(409).json({ message: 'Department already exists' });
 
     const department = await prisma.department.create({ data: { name: name.trim() } });
+    audit(req, 'DEPARTMENT_CREATED', 'SETTINGS', department.id, { name: department.name });
     return res.status(201).json(department);
   } catch (error) {
     logger.error('addDepartment error:', error);
@@ -117,7 +123,9 @@ export const addDepartment = async (req: AuthRequest, res: Response): Promise<an
 export const deleteDepartment = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
+    const dep = await prisma.department.findUnique({ where: { id }, select: { name: true } });
     await prisma.department.delete({ where: { id } });
+    audit(req, 'DEPARTMENT_DELETED', 'SETTINGS', id, { name: dep?.name ?? id });
     return res.json({ message: 'Department deleted' });
   } catch (error) {
     logger.error('deleteDepartment error:', error);
@@ -146,6 +154,7 @@ export const addRole = async (req: AuthRequest, res: Response): Promise<any> => 
     if (existing) return res.status(409).json({ message: 'Role already exists' });
 
     const role = await prisma.employeeRole.create({ data: { name: name.trim() } });
+    audit(req, 'ROLE_CREATED', 'SETTINGS', role.id, { name: role.name });
     return res.status(201).json(role);
   } catch (error) {
     logger.error('addRole error:', error);
@@ -156,7 +165,9 @@ export const addRole = async (req: AuthRequest, res: Response): Promise<any> => 
 export const deleteRole = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
+    const rl = await prisma.employeeRole.findUnique({ where: { id }, select: { name: true } });
     await prisma.employeeRole.delete({ where: { id } });
+    audit(req, 'ROLE_DELETED', 'SETTINGS', id, { name: rl?.name ?? id });
     return res.json({ message: 'Role deleted' });
   } catch (error) {
     logger.error('deleteRole error:', error);
