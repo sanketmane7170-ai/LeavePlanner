@@ -33,6 +33,7 @@ interface NavItem {
 const adminNav: NavItem[] = [
   { href: "/admin/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
   { href: "/admin/employees",     label: "Employees",     icon: Users           },
+  { href: "/admin/team-calendar", label: "Team Calendar", icon: CalendarDays    },
   {
     href: "/admin/policy-manager",
     label: "Policy Manager",

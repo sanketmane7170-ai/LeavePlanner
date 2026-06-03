@@ -440,4 +440,123 @@ ${TABLE(
       { name: 'endDate',      description: 'Last working day',          example: '31/07/2026'    },
     ],
   },
+
+  {
+    key: 'PROBATION_ENDING_ADMIN', name: 'Probation Ending Soon — Admin Alert',
+    description: 'Sent to admins when one or more employees have probation ending within 7 days.',
+    category: 'ADMIN',
+    subject: '{{orgName}} — {{count}} Employee Probation Period{{plural}} Ending Soon',
+    bodyHtml: WRAP('{{orgName}}', 'HR · Probation Alert', `
+${INTRO('This is an automated reminder that the following employee(s) are approaching the end of their probation period. Please review and update their leave policy, probation rule, and any other HR settings accordingly.')}
+${SECTION('Employees Ending Probation in 7 Days')}
+{{employeeRows}}
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">
+  Please log in to the HR system to review each employee's policy assignments before their probation ends.
+</p>
+${BTN('Review Employees', '{{reviewUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',       description: 'Organization name',                     example: 'Innovizia'  },
+      { name: 'count',         description: 'Number of employees',                   example: '2'          },
+      { name: 'plural',        description: '"s" if more than one, else empty',      example: 's'          },
+      { name: 'employeeRows',  description: 'HTML table rows of affected employees', example: '<table>…</table>' },
+      { name: 'reviewUrl',     description: 'URL to employees page',                 example: 'http://localhost:3005/admin/employees' },
+    ],
+  },
+
+  {
+    key: 'LEAVE_EXPIRY_WARNING', name: 'Leave Balance Expiry Warning',
+    description: 'Sent to employees in October/November reminding them their unused leave days will lapse at year-end.',
+    category: 'EMPLOYEE',
+    subject: '{{orgName}} — Your {{remainingDays}} Remaining Leave Day{{plural}} Will Expire on 31 Dec',
+    bodyHtml: WRAP('{{orgName}}', 'Leave Management · End-of-Year Reminder', `
+${INTRO('Hello <strong>{{employeeName}}</strong>,<br><br>This is a friendly reminder that you have <strong>{{remainingDays}} unused leave day{{plural}}</strong> remaining under your current leave policy (<strong>{{policyName}}</strong>). These days <strong>will expire on 31 December {{year}}</strong> and will not carry forward to the next year.')}
+${SECTION('Your Leave Balance')}
+${TABLE(
+  ROW('Policy', '{{policyName}}') +
+  ROW('Total Allowance', '{{totalDays}} days') +
+  ROW('Used So Far', '{{usedDays}} days') +
+  ROW('Remaining', '{{remainingDays}} days', true)
+)}
+<div style="background:#FEF3C7;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:6px;padding:16px 18px;margin:0 0 24px 0;">
+  <p style="margin:0;color:#92400E;font-size:13px;line-height:1.7;">
+    <strong>Deadline: 31 December {{year}}</strong><br>
+    Please plan and apply for any remaining leave before the year ends. Unused days will not be carried over.
+  </p>
+</div>
+${BTN('Apply for Leave', '{{applyUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',        description: 'Organization name',                 example: 'Innovizia'        },
+      { name: 'employeeName',   description: "Employee's full name",              example: 'Priya Sharma'     },
+      { name: 'policyName',     description: 'Leave policy name',                 example: 'Annual Leave'     },
+      { name: 'remainingDays',  description: 'Remaining leave days',              example: '6'                },
+      { name: 'plural',         description: '"s" if more than one, else empty',  example: 's'                },
+      { name: 'totalDays',      description: 'Total annual allowance',            example: '12'               },
+      { name: 'usedDays',       description: 'Days used so far',                  example: '6'                },
+      { name: 'year',           description: 'Current year',                      example: '2026'             },
+      { name: 'applyUrl',       description: 'URL to apply-leave page',           example: 'http://localhost:3005/employee/apply-leave' },
+    ],
+  },
+
+  {
+    key: 'WFH_BALANCE_REMINDER', name: 'Monthly WFH Balance Reminder',
+    description: 'Sent on the first Monday of each month reminding employees of their remaining WFH days.',
+    category: 'EMPLOYEE',
+    subject: '{{orgName}} — Your WFH Balance: {{remainingDays}} Day{{plural}} Remaining',
+    bodyHtml: WRAP('{{orgName}}', 'Leave Management · Monthly WFH Reminder', `
+${INTRO('Hello <strong>{{employeeName}}</strong>,<br><br>Here is a quick update on your Work From Home (WFH) balance for {{year}}.')}
+${SECTION('Your WFH Balance')}
+${TABLE(
+  ROW('Policy', '{{policyName}}') +
+  ROW('Annual Allowance', '{{totalDays}} days') +
+  ROW('Used', '{{usedDays}} days') +
+  ROW('Remaining', '{{remainingDays}} days', true)
+)}
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">WFH balance resets on January 1st each year. Plan your remote days wisely!</p>
+${BTN('Apply for WFH', '{{applyUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',       description: 'Organization name',                 example: 'Innovizia'   },
+      { name: 'employeeName',  description: "Employee's full name",              example: 'Rahul Mehta' },
+      { name: 'policyName',    description: 'WFH policy name',                  example: 'Standard WFH' },
+      { name: 'remainingDays', description: 'Remaining WFH days',               example: '18'           },
+      { name: 'plural',        description: '"s" if not 1, else empty',         example: 's'            },
+      { name: 'totalDays',     description: 'Total WFH allowance for the year', example: '24'           },
+      { name: 'usedDays',      description: 'WFH days used so far',             example: '6'            },
+      { name: 'year',          description: 'Current year',                     example: '2026'         },
+      { name: 'applyUrl',      description: 'URL to apply-WFH page',            example: 'http://localhost:3005/employee/apply-wfh' },
+    ],
+  },
+
+  {
+    key: 'YEAR_START_BALANCE_ROLLOVER', name: 'New Year Leave Balance Initialized',
+    description: 'Sent to admins on January 1st confirming leave balances have been rolled over for all employees.',
+    category: 'ADMIN',
+    subject: '{{orgName}} — {{year}} Leave Balances Initialized ({{count}} Employees)',
+    bodyHtml: WRAP('{{orgName}}', 'HR · Annual Rollover Complete', `
+${INTRO('This is an automated confirmation that leave balances for <strong>{{year}}</strong> have been successfully initialized for all active employees.')}
+${SECTION('Rollover Summary')}
+${TABLE(
+  ROW('New Year', '{{year}}') +
+  ROW('Employees Processed', '{{count}}') +
+  ROW('Carry-Forward Applied', '{{carryCount}} employees') +
+  ROW('Completed At', '{{completedAt}}', true)
+)}
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">Employees can now apply for leave under their {{year}} balance. Any carry-forward from {{prevYear}} has been automatically added to their new balance.</p>
+${BTN('View Employees', '{{reviewUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',      description: 'Organization name',            example: 'Innovizia'                  },
+      { name: 'year',         description: 'New year just started',        example: '2027'                       },
+      { name: 'prevYear',     description: 'Previous year',                example: '2026'                       },
+      { name: 'count',        description: 'Total employees processed',    example: '45'                         },
+      { name: 'carryCount',   description: 'Employees with carry-forward', example: '12'                         },
+      { name: 'completedAt',  description: 'Completion timestamp',         example: '01 Jan 2027 01:02 AM'       },
+      { name: 'reviewUrl',    description: 'URL to employees page',        example: 'http://localhost:3005/admin/employees' },
+    ],
+  },
 ];

@@ -33,7 +33,13 @@ import { startAbsentCron } from './services/absentCron';
 import { startBackupCron } from './services/backupCron';
 import { startMonthlyCron } from './services/monthlyCron';
 import { startAnnouncementCron } from './services/announcementCron';
-import { startNoticePeriodCron } from './services/noticePeriodCron';
+import { startNoticePeriodCron }  from './services/noticePeriodCron';
+import { startYearStartCron }     from './services/yearStartCron';
+import { startProbationCron }     from './services/probationCron';
+import { startYearEndWarnCron }   from './services/yearEndWarnCron';
+import { startHolidayReminderCron } from './services/holidayReminderCron';
+import { startWfhReminderCron }   from './services/wfhReminderCron';
+import { startMaintenanceCron }   from './services/maintenanceCron';
 import { seedEmailTemplates } from './services/emailTemplateSeed';
 
 const app = express();
@@ -147,6 +153,12 @@ const server = app.listen(PORT, () => {
   startMonthlyCron();
   startAnnouncementCron();
   startNoticePeriodCron();
+  startYearStartCron();
+  startProbationCron();
+  startYearEndWarnCron();
+  startHolidayReminderCron();
+  startWfhReminderCron();
+  startMaintenanceCron();
   seedEmailTemplates().catch((e) => logger.error('[emailTemplateSeed]', e));
 });
 

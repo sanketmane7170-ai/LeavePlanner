@@ -397,3 +397,90 @@ export async function sendNoticePeriodManagerEmail(
     endDate:      notice.endDate,
   });
 }
+
+// ── Cron email helpers ────────────────────────────────────────────────────────
+
+export async function sendProbationEndingAdminEmail(
+  adminEmails: string[],
+  employees: { fullName: string; employeeId: string; department?: string | null; probationEnds: string }[]
+): Promise<void> {
+  if (!adminEmails.length || !employees.length) return;
+
+  // Build HTML table rows
+  const rows = employees.map((e) =>
+    `<tr>
+      <td style="padding:10px 16px;font-size:13px;color:#0F172A;font-weight:600;border-bottom:1px solid #F8FAFC;">${e.fullName}</td>
+      <td style="padding:10px 16px;font-size:13px;color:#374151;border-bottom:1px solid #F8FAFC;">${e.employeeId}</td>
+      <td style="padding:10px 16px;font-size:13px;color:#374151;border-bottom:1px solid #F8FAFC;">${e.department ?? '—'}</td>
+      <td style="padding:10px 16px;font-size:13px;color:#F59E0B;font-weight:600;border-bottom:1px solid #F8FAFC;">${e.probationEnds}</td>
+    </tr>`
+  ).join('');
+
+  const employeeRows = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+           style="width:100%;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;margin:0 0 24px 0;border-spacing:0;">
+      <tr style="background:#E2E8F0;">
+        <th style="padding:8px 16px;font-size:11px;text-align:left;color:#64748B;text-transform:uppercase;letter-spacing:.8px;">Name</th>
+        <th style="padding:8px 16px;font-size:11px;text-align:left;color:#64748B;text-transform:uppercase;letter-spacing:.8px;">ID</th>
+        <th style="padding:8px 16px;font-size:11px;text-align:left;color:#64748B;text-transform:uppercase;letter-spacing:.8px;">Department</th>
+        <th style="padding:8px 16px;font-size:11px;text-align:left;color:#64748B;text-transform:uppercase;letter-spacing:.8px;">Probation Ends</th>
+      </tr>
+      ${rows}
+    </table>`;
+
+  await send(adminEmails, 'PROBATION_ENDING_ADMIN', {
+    count:        String(employees.length),
+    plural:       employees.length > 1 ? 's' : '',
+    employeeRows,
+    reviewUrl:    `${APP_URL}/admin/employees`,
+  });
+}
+
+export async function sendLeaveExpiryWarningEmail(
+  to: string,
+  fullName: string,
+  details: { policyName: string; totalDays: number; usedDays: number; remainingDays: number; year: number }
+): Promise<void> {
+  await send(to, 'LEAVE_EXPIRY_WARNING', {
+    employeeName:  fullName,
+    policyName:    details.policyName,
+    totalDays:     String(details.totalDays),
+    usedDays:      String(details.usedDays),
+    remainingDays: String(details.remainingDays),
+    plural:        details.remainingDays !== 1 ? 's' : '',
+    year:          String(details.year),
+    applyUrl:      `${APP_URL}/employee/apply-leave`,
+  });
+}
+
+export async function sendWfhBalanceReminderEmail(
+  to: string,
+  fullName: string,
+  details: { policyName: string; totalDays: number; usedDays: number; remainingDays: number; year: number }
+): Promise<void> {
+  await send(to, 'WFH_BALANCE_REMINDER', {
+    employeeName:  fullName,
+    policyName:    details.policyName,
+    totalDays:     String(details.totalDays),
+    usedDays:      String(details.usedDays),
+    remainingDays: String(details.remainingDays),
+    plural:        details.remainingDays !== 1 ? 's' : '',
+    year:          String(details.year),
+    applyUrl:      `${APP_URL}/employee/apply-wfh`,
+  });
+}
+
+export async function sendYearStartRolloverEmail(
+  adminEmails: string[],
+  details: { year: number; count: number; carryCount: number; completedAt: string }
+): Promise<void> {
+  if (!adminEmails.length) return;
+  await send(adminEmails, 'YEAR_START_BALANCE_ROLLOVER', {
+    year:        String(details.year),
+    prevYear:    String(details.year - 1),
+    count:       String(details.count),
+    carryCount:  String(details.carryCount),
+    completedAt: details.completedAt,
+    reviewUrl:   `${APP_URL}/admin/employees`,
+  });
+}
