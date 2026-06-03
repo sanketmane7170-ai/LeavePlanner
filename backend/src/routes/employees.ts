@@ -6,6 +6,7 @@ import {
   getEmployee,
   createEmployee,
   updateEmployee,
+  deleteEmployee,
   resetPassword,
   getDepartments,
   getEmployeePoliciesAdmin,
@@ -31,5 +32,6 @@ router.post('/', createEmployee);
 router.patch('/:id/allowance', updateEmployeeAllowance);
 router.patch('/:id', updateEmployee);
 router.post('/:id/reset-password', resetPassword);
+router.delete('/:id', deleteEmployee);
 
 export default router;

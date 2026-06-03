@@ -23,7 +23,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
+  Trash2,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import api from "@/lib/api";
 import { Employee, LeavePolicy, WfhPolicy } from "@/types";
 import { WorkingScheduleTab } from "@/components/admin/WorkingScheduleTab";
@@ -330,6 +339,9 @@ export default function EmployeesPage() {
   const [sheetTab, setSheetTab] = useState<TabId>("info");
   const [editMode, setEditMode] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteHasActive, setDeleteHasActive] = useState(false);
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
@@ -436,6 +448,29 @@ export default function EmployeesPage() {
       toast.error("Failed to update employee");
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  // ── Delete employee ──────────────────────────────────────────────────────
+  const handleDelete = async (force = false) => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/admin/employees/${deleteTarget.id}${force ? "?force=true" : ""}`);
+      toast.success(`${deleteTarget.fullName} deleted successfully.`);
+      setDeleteTarget(null);
+      setDeleteHasActive(false);
+      setSelectedEmployee(null);
+      fetchEmployees();
+    } catch (err: any) {
+      if (err?.response?.data?.code === "HAS_ACTIVE_RECORDS") {
+        setDeleteHasActive(true); // show warning to re-confirm
+      } else {
+        toast.error(err?.response?.data?.message ?? "Failed to delete employee");
+        setDeleteTarget(null);
+      }
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -866,11 +901,72 @@ export default function EmployeesPage() {
                     </>
                   )}
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setDeleteTarget(selectedEmployee); setDeleteHasActive(false); }}
+                  className="text-red-500 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20"
+                >
+                  <Trash2 size={13} />
+                </Button>
               </div>
             </>
           )}
         </SheetContent>
       </Sheet>
+
+      {/* ── Delete confirmation dialog ─────────────────────────────────────── */}
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) { setDeleteTarget(null); setDeleteHasActive(false); } }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+              <Trash2 size={17} />
+              Delete Employee
+            </DialogTitle>
+            <DialogDescription>
+              Permanently delete{" "}
+              <strong className="text-slate-900 dark:text-white">{deleteTarget?.fullName}</strong>{" "}
+              ({deleteTarget?.employeeId})? This removes the account and all associated
+              leave records, balances, and reports. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteHasActive && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>
+                This employee has pending or approved leave/WFH applications.
+                Deleting will permanently remove those records too.
+                Click <strong>Delete Anyway</strong> to confirm.
+              </span>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setDeleteTarget(null); setDeleteHasActive(false); }}
+              disabled={deleteLoading}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleDelete(deleteHasActive)}
+              disabled={deleteLoading}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white border-0 gap-1.5"
+            >
+              {deleteLoading
+                ? <WeaveSpinner size={13} className="animate-spin" />
+                : <Trash2 size={13} />}
+              {deleteLoading ? "Deleting…" : deleteHasActive ? "Delete Anyway" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

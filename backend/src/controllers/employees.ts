@@ -824,3 +824,63 @@ export const updateEmployeeAllowance = async (req: AuthRequest, res: Response): 
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+// ── DELETE /api/admin/employees/:id ──────────────────────────────────────────
+export const deleteEmployee = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id = String(req.params['id']);
+
+    const employee = await prisma.employee.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, email: true, role: true } },
+        leaveApplications: { where: { status: { in: ['PENDING', 'APPROVED'] } }, select: { id: true }, take: 1 },
+        wfhApplications:   { where: { status: { in: ['PENDING', 'APPROVED'] } }, select: { id: true }, take: 1 },
+      },
+    });
+
+    if (!employee) {
+      return res.status(404).json({ message: 'Employee not found' });
+    }
+
+    // Prevent deleting an admin account
+    if ((employee.user as any)?.role === 'ADMIN') {
+      return res.status(400).json({ message: 'Admin accounts cannot be deleted from this screen. Demote the user first.' });
+    }
+
+    // Prevent deleting yourself
+    const requestingUser = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      include: { employee: { select: { id: true } } },
+    });
+    if ((requestingUser?.employee as any)?.id === id) {
+      return res.status(400).json({ message: 'You cannot delete your own account.' });
+    }
+
+    // Warn about active leaves (but still allow — admin confirmed in dialog)
+    const hasActive = (employee.leaveApplications?.length ?? 0) > 0 || (employee.wfhApplications?.length ?? 0) > 0;
+
+    const { force } = req.query;
+    if (hasActive && force !== 'true') {
+      return res.status(409).json({
+        message: 'Employee has pending or approved leave/WFH applications.',
+        hasActive: true,
+        code: 'HAS_ACTIVE_RECORDS',
+      });
+    }
+
+    const empName     = employee.fullName;
+    const empIdStr    = employee.employeeId;
+    const userIdToDelete = (employee.user as any)?.id as string;
+
+    // Deleting the User cascades → Employee → all leave/WFH/balance/absent records
+    await prisma.user.delete({ where: { id: userIdToDelete } });
+
+    audit(req, 'EMPLOYEE_DELETED', 'EMPLOYEE', id, { fullName: empName, employeeId: empIdStr });
+
+    return res.json({ message: `Employee ${empName} deleted successfully.` });
+  } catch (error) {
+    logger.error('deleteEmployee error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
