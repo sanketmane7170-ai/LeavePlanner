@@ -200,7 +200,8 @@ export default function EditWfhPolicyPage() {
         api.get("/admin/policies/wfh"),
         api.get("/admin/employees?limit=200"),
       ]);
-      const found: WfhPolicy = policiesRes.data.find((p: WfhPolicy) => p.id === id);
+      const allPolicies: WfhPolicy[] = Array.isArray(policiesRes.data) ? policiesRes.data : [];
+      const found: WfhPolicy | undefined = allPolicies.find((p: WfhPolicy) => p.id === id);
       if (!found) { toast.error("Policy not found"); router.push("/admin/wfh-policy"); return; }
       setPolicy(found);
       reset({

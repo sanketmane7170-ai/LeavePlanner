@@ -22,7 +22,17 @@ export const getOrgSettings = async (req: AuthRequest, res: Response): Promise<a
 
 export const updateOrgSettings = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
-    const { orgName, timezone } = req.body as { orgName?: string; timezone?: string };
+    const {
+      orgName,
+      timezone,
+      monthlyLeaveLimitEnabled,
+      monthlyLeaveLimit,
+    } = req.body as {
+      orgName?: string;
+      timezone?: string;
+      monthlyLeaveLimitEnabled?: boolean;
+      monthlyLeaveLimit?: number | null;
+    };
 
     const settings = await prisma.orgSettings.upsert({
       where: { id: 'global' },
@@ -30,10 +40,12 @@ export const updateOrgSettings = async (req: AuthRequest, res: Response): Promis
       update: {
         ...(orgName !== undefined && { orgName }),
         ...(timezone !== undefined && { timezone }),
+        ...(monthlyLeaveLimitEnabled !== undefined && { monthlyLeaveLimitEnabled }),
+        ...(monthlyLeaveLimit !== undefined && { monthlyLeaveLimit: monthlyLeaveLimit ?? null }),
       },
     });
 
-    audit(req, 'ORG_SETTINGS_UPDATED', 'SETTINGS', 'global', { orgName, timezone });
+    audit(req, 'ORG_SETTINGS_UPDATED', 'SETTINGS', 'global', { orgName, timezone, monthlyLeaveLimitEnabled, monthlyLeaveLimit });
     return res.json({ message: 'Settings updated', settings });
   } catch (error) {
     logger.error('updateOrgSettings error:', error);

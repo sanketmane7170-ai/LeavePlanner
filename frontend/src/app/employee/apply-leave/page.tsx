@@ -123,6 +123,7 @@ export default function ApplyLeavePage() {
   // Warnings state
   const [warningType, setWarningType] = useState<"NOTICE" | "BALANCE" | "PROBATION" | "BLACKOUT" | "AUTO_APPROVED" | "ALL_GOOD" | null>(null);
   const [showWarning, setShowWarning] = useState(false);
+  const [applyAsUnpaid, setApplyAsUnpaid] = useState(false);
 
   useEffect(() => {
     api
@@ -252,6 +253,7 @@ export default function ApplyLeavePage() {
         isHalfDay,
         halfDaySlot: isHalfDay ? halfDaySlot : undefined,
         reason: reason.trim(),
+        requestedUnpaid: applyAsUnpaid,
       });
       toast.success(res.data.message);
       router.push("/employee/my-leaves");
@@ -565,10 +567,9 @@ export default function ApplyLeavePage() {
               )}
               {warningType === "BALANCE" && (
                 <>
-                  You don't have enough leave balance!{'\n\n'}
-                  Your remaining balance is <strong>{currentBalance?.remainingDays ?? 0} days</strong>.{'\n'}
-                  There are high chances that this leave will get rejected, or it will be marked as unpaid leave.{'\n'}
-                  Are you sure you want to apply?
+                  You don't have enough leave balance.{'\n\n'}
+                  Your remaining balance is <strong>{currentBalance?.remainingDays ?? 0} days</strong>, but you're requesting <strong>{totalDays} days</strong>.{'\n\n'}
+                  Choose how you'd like to proceed:
                 </>
               )}
               {warningType === "AUTO_APPROVED" && (
@@ -587,8 +588,44 @@ export default function ApplyLeavePage() {
               )}
             </DialogDescription>
           </DialogHeader>
+          {/* Unpaid option for balance shortfall */}
+          {warningType === "BALANCE" && (
+            <div className="mt-4 space-y-2">
+              <div
+                onClick={() => setApplyAsUnpaid(false)}
+                className={cn(
+                  "flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all",
+                  !applyAsUnpaid ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700"
+                )}
+              >
+                <div className={cn("mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0", !applyAsUnpaid ? "border-primary" : "border-slate-300")}>
+                  {!applyAsUnpaid && <div className="h-2 w-2 rounded-full bg-primary" />}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">Apply anyway (let admin decide)</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Admin will see insufficient balance warning and may approve or reject.</p>
+                </div>
+              </div>
+              <div
+                onClick={() => setApplyAsUnpaid(true)}
+                className={cn(
+                  "flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all",
+                  applyAsUnpaid ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20" : "border-slate-200 dark:border-slate-700"
+                )}
+              >
+                <div className={cn("mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0", applyAsUnpaid ? "border-amber-500" : "border-slate-300")}>
+                  {applyAsUnpaid && <div className="h-2 w-2 rounded-full bg-amber-500" />}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">Request as unpaid leave</p>
+                  <p className="text-xs text-slate-500 mt-0.5">This leave will not deduct from your balance. Admin will approve/reject with unpaid terms.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <DialogFooter className="mt-6 flex sm:justify-end gap-3">
-            <Button variant="outline" onClick={() => setShowWarning(false)}>
+            <Button variant="outline" onClick={() => { setShowWarning(false); setApplyAsUnpaid(false); }}>
               No, Cancel
             </Button>
             <Button onClick={executeSubmit} disabled={submitting}>

@@ -186,6 +186,8 @@ export interface LeaveApplication {
   adminComment?: string;
   isAdminEntry: boolean;
   isUnpaid: boolean;
+  paidDays?: number | null;
+  unpaidDays?: number | null;
   noticeViolation?: boolean;
   createdAt: string;
 }
@@ -212,6 +214,7 @@ export interface LeaveBalance {
   year: number;
   totalDays: number;
   usedDays: number;
+  unpaidDaysUsed: number;
   remainingDays: number;
 }
 

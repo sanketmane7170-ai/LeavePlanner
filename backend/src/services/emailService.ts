@@ -273,7 +273,7 @@ export async function sendWfhSubmittedEmail(
 export async function sendLeaveStatusEmail(
   to: string,
   fullName: string,
-  details: { leaveType: string; fromDate: string; toDate: string; isHalfDay: boolean; halfDaySlot?: string | null; totalDays: number },
+  details: { leaveType: string; fromDate: string; toDate: string; isHalfDay: boolean; halfDaySlot?: string | null; totalDays: number; paidDays?: number; unpaidDays?: number },
   status: 'APPROVED' | 'REJECTED' | 'ABSENT',
   adminComment?: string
 ): Promise<void> {
@@ -287,17 +287,33 @@ export async function sendLeaveStatusEmail(
     REJECTED: 'Rejected',
     ABSENT:   'Marked Absent',
   };
+
+  // Build paid/unpaid breakdown box for approved leaves
+  let paidUnpaidBox = '';
+  if (status === 'APPROVED' && details.paidDays !== undefined && details.unpaidDays !== undefined && details.unpaidDays > 0) {
+    paidUnpaidBox = `
+      <div style="margin:16px 0;padding:14px 16px;background:#f0fdf4;border-left:4px solid #22c55e;border-radius:6px;">
+        <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#15803d;">Leave Day Breakdown</p>
+        <p style="margin:0;font-size:13px;color:#374151;">
+          ✅ <strong>${details.paidDays}</strong> day(s) — Paid leave
+        </p>
+        <p style="margin:4px 0 0;font-size:13px;color:#374151;">
+          ⚠️ <strong>${details.unpaidDays}</strong> day(s) — Unpaid leave (no balance deduction)
+        </p>
+      </div>`;
+  }
+
   await send(to, 'LEAVE_STATUS_UPDATE', {
-    employeeName:   fullName,
-    statusLabel:    statusLabels[status] ?? status,
-    statusMessage:  statusMessages[status] ?? '',
-    leaveType:      LEAVE_TYPE_LABELS[details.leaveType] ?? details.leaveType,
-    fromDate:       details.fromDate,
-    toDate:         details.toDate,
-    duration:       formatDuration(details.isHalfDay, details.halfDaySlot, details.totalDays),
-    adminCommentBox: adminCommentBox(adminComment),
-    statusBadge:    statusBadgeHtml(status),
-    myLeavesUrl:    `${APP_URL}/employee/my-leaves`,
+    employeeName:    fullName,
+    statusLabel:     statusLabels[status] ?? status,
+    statusMessage:   statusMessages[status] ?? '',
+    leaveType:       LEAVE_TYPE_LABELS[details.leaveType] ?? details.leaveType,
+    fromDate:        details.fromDate,
+    toDate:          details.toDate,
+    duration:        formatDuration(details.isHalfDay, details.halfDaySlot, details.totalDays),
+    adminCommentBox: adminCommentBox(adminComment) + paidUnpaidBox,
+    statusBadge:     statusBadgeHtml(status),
+    myLeavesUrl:     `${APP_URL}/employee/my-leaves`,
   });
 }
 

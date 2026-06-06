@@ -124,7 +124,7 @@ export default function WfhPolicyPage() {
     setLoading(true);
     try {
       const res = await api.get("/admin/policies/wfh");
-      setPolicies(res.data);
+      setPolicies(Array.isArray(res.data) ? res.data : []);
     } catch {
       toast.error("Failed to load WFH policies");
     } finally {

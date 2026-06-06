@@ -318,13 +318,21 @@ export const applyWfh = async (req: AuthRequest, res: Response): Promise<any> =>
         { fullName: employee.fullName, employeeId: employee.employeeId, department: employee.department },
         emailDetails
       ).catch((e) => logger.error('[email] sendWfhAppliedAdminEmail failed:', e));
-    }
 
-    sendWfhSubmittedEmail(
-      (employee as any).user?.email ?? '',
-      employee.fullName,
-      emailDetails
-    ).catch((e) => logger.error('[email] sendWfhSubmittedEmail failed:', e));
+      sendWfhSubmittedEmail(
+        (employee as any).user?.email ?? '',
+        employee.fullName,
+        emailDetails
+      ).catch((e) => logger.error('[email] sendWfhSubmittedEmail failed:', e));
+    } else {
+      // Auto-approved: send approval status email, not submission email
+      sendWfhStatusEmail(
+        (employee as any).user?.email ?? '',
+        employee.fullName,
+        { fromDate: fromDate.toLocaleDateString('en-IN'), toDate: toDate.toLocaleDateString('en-IN'), isHalfDay, halfDaySlot: halfDaySlot ?? null, totalDays },
+        'APPROVED'
+      ).catch((e) => logger.error('[email] sendWfhStatusEmail auto-approved failed:', e));
+    }
 
     return res.status(201).json({
       message: requiresApproval
@@ -545,6 +553,90 @@ export const rejectWfh = async (req: AuthRequest, res: Response): Promise<any> =
     return res.json({ message: 'WFH application rejected.' });
   } catch (error) {
     logger.error('rejectWfh error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── PATCH /api/employee/wfh/:id/cancel ────────────────────────────────────────
+export const cancelWfh = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const userId = req.user!.userId;
+    const id = String(req.params['id']);
+
+    const employee = await prisma.employee.findUnique({ where: { userId }, select: { id: true } });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    const wfh = await prisma.wfhApplication.findUnique({ where: { id } });
+    if (!wfh) return res.status(404).json({ message: 'WFH application not found' });
+    if (wfh.employeeId !== employee.id) return res.status(403).json({ message: 'Not authorized' });
+    if (!['PENDING', 'APPROVED'].includes(wfh.status)) {
+      return res.status(400).json({ message: `Cannot cancel a WFH application with status "${wfh.status}".` });
+    }
+
+    await prisma.wfhApplication.update({ where: { id }, data: { status: 'CANCELLED' } });
+
+    await prisma.auditLog.create({
+      data: {
+        adminId: userId,
+        action: 'CANCEL_WFH',
+        targetType: 'WFH',
+        targetId: id,
+        meta: JSON.stringify({ fromDate: wfh.date.toISOString().split('T')[0], totalDays: wfh.totalDays }),
+      },
+    }).catch((e) => logger.error('Failed to log cancelWfh to auditLog:', e));
+
+    return res.json({ message: 'WFH application cancelled.' });
+  } catch (error) {
+    logger.error('cancelWfh error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── POST /api/admin/wfh/bulk-approve ──────────────────────────────────────────
+export const bulkApproveWfh = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const { ids } = req.body as { ids: string[] };
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'ids must be a non-empty array' });
+    }
+
+    const pending = await prisma.wfhApplication.findMany({
+      where: { id: { in: ids }, status: 'PENDING' },
+      include: { employee: { include: { user: { select: { email: true } } } } },
+    });
+
+    if (pending.length === 0) {
+      return res.status(400).json({ message: 'No pending WFH applications found for the given ids.' });
+    }
+
+    await prisma.wfhApplication.updateMany({
+      where: { id: { in: pending.map((w) => w.id) } },
+      data: { status: 'APPROVED' },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        adminId: req.user!.userId,
+        action: 'BULK_APPROVE_WFH',
+        targetType: 'WFH',
+        targetId: pending.map((w) => w.id).join(','),
+        meta: JSON.stringify({ count: pending.length }),
+      },
+    }).catch((e) => logger.error('Failed to log bulkApproveWfh to auditLog:', e));
+
+    // Send approval emails (fire-and-forget)
+    for (const wfh of pending) {
+      sendWfhStatusEmail(
+        (wfh.employee as any).user?.email ?? '',
+        wfh.employee.fullName,
+        { fromDate: wfh.date.toLocaleDateString('en-IN'), toDate: (wfh.toDate ?? wfh.date).toLocaleDateString('en-IN'), isHalfDay: wfh.isHalfDay, halfDaySlot: wfh.halfDaySlot, totalDays: wfh.totalDays },
+        'APPROVED'
+      ).catch((e) => logger.error(`[email] sendWfhStatusEmail bulkApprove failed for ${wfh.id}:`, e));
+    }
+
+    return res.json({ message: `${pending.length} WFH application(s) approved.`, approved: pending.length });
+  } catch (error) {
+    logger.error('bulkApproveWfh error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

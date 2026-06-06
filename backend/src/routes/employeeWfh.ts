@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
-import { getWfhBalance, applyWfh, getMyWfh } from '../controllers/wfh';
+import { getWfhBalance, applyWfh, getMyWfh, cancelWfh } from '../controllers/wfh';
 
 const router = Router();
 
@@ -12,5 +12,6 @@ router.use(authorize(['EMPLOYEE']));
 router.get('/balance', getWfhBalance);
 router.get('/', getMyWfh);
 router.post('/apply', applyWfh);
+router.patch('/:id/cancel', cancelWfh);
 
 export default router;

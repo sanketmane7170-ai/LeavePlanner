@@ -17,7 +17,6 @@ import { WeaveSpinner } from "@/components/ui/weave-spinner";
 // ── Schema ────────────────────────────────────────────────────────────────────
 const schema = z.object({
   name:             z.string().min(2, "At least 2 characters"),
-  leaveType:        z.enum(["GENERAL", "SICK", "TRANSPORT_WEATHER", "PERSONAL"]),
   daysAllowed:      z.string().min(1, "Required"),
   probationRule:    z.enum(["NONE", "NO_LEAVES", "UNPAID_ALLOWED"]),
   approvalRequired: z.boolean(),
@@ -65,7 +64,6 @@ export default function NewPolicyPage() {
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      leaveType:        "GENERAL",
       probationRule:    "NO_LEAVES",
       approvalRequired: true,
       halfDayAllowed:   true,
@@ -125,7 +123,7 @@ export default function NewPolicyPage() {
                 {...register("name")}
               />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <Input
                 label="Days Allowed / Year *"
                 type="number"
@@ -135,14 +133,6 @@ export default function NewPolicyPage() {
                 error={errors.daysAllowed?.message}
                 {...register("daysAllowed")}
               />
-            </div>
-            <div>
-              <Select label="Leave Type" {...register("leaveType")}>
-                <option value="GENERAL">All Leave Types</option>
-                <option value="SICK">Sick Leave</option>
-                <option value="TRANSPORT_WEATHER">Transport / Weather</option>
-                <option value="PERSONAL">Personal Leave</option>
-              </Select>
             </div>
             <div className="sm:col-span-2">
               <Select label="Probation Rule" {...register("probationRule")}>

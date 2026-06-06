@@ -94,6 +94,8 @@ export default function WfhRequestsPage() {
   const [rejectComment, setRejectComment] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [employeeBalance, setEmployeeBalance] = useState<EmployeeBalanceSummary | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
 
   const fetchWfh = useCallback(async () => {
     setLoading(true);
@@ -159,6 +161,36 @@ export default function WfhRequestsPage() {
     }
   };
 
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkApproving(true);
+    try {
+      const res = await api.post("/admin/wfh/bulk-approve", { ids: Array.from(selectedIds) });
+      toast.success(res.data.message || `${res.data.approved} WFH application(s) approved`);
+      setSelectedIds(new Set());
+      fetchWfh();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Bulk approve failed");
+    } finally {
+      setBulkApproving(false);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const pendingIds = wfhList.filter((w) => w.status === "PENDING").map((w) => w.id);
+    setSelectedIds((prev) => prev.size === pendingIds.length ? new Set() : new Set(pendingIds));
+  };
+
+  const pendingCount = wfhList.filter((w) => w.status === "PENDING").length;
+
   const yearOpts = [currentYear, currentYear - 1, currentYear - 2];
 
   return (
@@ -176,10 +208,19 @@ export default function WfhRequestsPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{total} total</p>
-        </div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-slate-500 dark:text-slate-400">{total} total</p>
+        {selectedIds.size > 0 && (
+          <Button
+            onClick={handleBulkApprove}
+            disabled={bulkApproving}
+            className="gap-1.5 bg-green-600 hover:bg-green-700 text-white border-0"
+            size="sm"
+          >
+            {bulkApproving ? <WeaveSpinner className="animate-spin" size={13} /> : <CheckCircle2 size={13} />}
+            {bulkApproving ? "Approving…" : `Approve ${selectedIds.size} selected`}
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -250,7 +291,14 @@ export default function WfhRequestsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+                <th className="px-4 py-3 w-8">
+                  {pendingCount > 0 && statusFilter === "PENDING" && (
+                    <input type="checkbox" className="rounded border-slate-300 dark:border-slate-600"
+                      checked={selectedIds.size === pendingCount && pendingCount > 0}
+                      onChange={toggleSelectAll} />
+                  )}
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Days</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
@@ -265,7 +313,14 @@ export default function WfhRequestsPage() {
                   onClick={() => { setDetailWfh(wfh); setRejectComment(""); }}
                   className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
                 >
-                  <td className="px-5 py-3.5">
+                  <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                    {wfh.status === "PENDING" && (
+                      <input type="checkbox" className="rounded border-slate-300 dark:border-slate-600"
+                        checked={selectedIds.has(wfh.id)}
+                        onChange={() => toggleSelect(wfh.id)} />
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5">
                     <p className="font-medium text-slate-900 dark:text-white">{wfh.employee.fullName}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {wfh.employee.employeeId}{wfh.employee.department && ` · ${wfh.employee.department}`}

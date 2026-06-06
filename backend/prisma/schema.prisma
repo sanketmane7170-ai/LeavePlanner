@@ -243,6 +243,8 @@ model LeaveApplication {
   adminComment    String?
   isAdminEntry    Boolean      @default(false)
   isUnpaid        Boolean      @default(false)
+  paidDays        Float?
+  unpaidDays      Float?
   noticeViolation Boolean      @default(false)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -273,18 +275,19 @@ model WfhApplication {
 }
 
 model LeaveBalance {
-  id            String    @id @default(cuid())
-  employeeId    String
-  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType     LeaveType
-  year          Int
-  totalDays     Float
-  usedDays      Float     @default(0)
-  remainingDays Float
-  isArchived    Boolean   @default(false)
-  archivedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  employeeId      String
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType       LeaveType
+  year            Int
+  totalDays       Float
+  usedDays        Float     @default(0)
+  unpaidDaysUsed  Float     @default(0)
+  remainingDays   Float
+  isArchived      Boolean   @default(false)
+  archivedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // isArchived in the key allows one active + one archived per (employee, type, year)
   @@unique([employeeId, leaveType, year, isArchived])
@@ -321,10 +324,12 @@ model AuditLog {
 }
 
 model OrgSettings {
-  id        String   @id @default("global")
-  orgName   String   @default("Innovizia")
-  timezone  String   @default("Asia/Kolkata")
-  updatedAt DateTime @updatedAt
+  id                       String   @id @default("global")
+  orgName                  String   @default("Innovizia")
+  timezone                 String   @default("Asia/Kolkata")
+  monthlyLeaveLimitEnabled Boolean  @default(false)
+  monthlyLeaveLimit        Float?
+  updatedAt                DateTime @updatedAt
 }
 
 model Department {
@@ -377,6 +382,8 @@ model MonthlyReport {
   totalWorkingDays Int
   presentDays      Float
   leaveDays        Float
+  paidLeaveDays    Float    @default(0)
+  unpaidLeaveDays  Float    @default(0)
   absentDays       Float
   wfhDays          Float
   attendancePct    Float

@@ -47,7 +47,6 @@ type EmployeeOption = {
 // ── Schemas ───────────────────────────────────────────────────────────────────
 const basicSchema = z.object({
   name:             z.string().min(2, "At least 2 characters"),
-  leaveType:        z.enum(["GENERAL", "SICK", "TRANSPORT_WEATHER", "PERSONAL"]),
   daysAllowed:      z.string().min(1, "Required"),
   probationRule:    z.enum(["NONE", "NO_LEAVES", "UNPAID_ALLOWED"]),
   approvalRequired: z.boolean(),
@@ -136,16 +135,20 @@ function SectionHeader({ icon: Icon, title, description, action }: {
 }
 
 const OPERATOR_LABELS: Record<string, string> = {
-  GTE: "At least ≥",
-  GT:  "More than >",
-  LTE: "At most ≤",
-  LT:  "Less than <",
-  EQ:  "Exactly =",
+  GTE: "at least",
+  GT:  "more than",
+  LTE: "up to",
+  LT:  "less than",
+  EQ:  "exactly",
 };
 
-const OPERATOR_SYMBOLS: Record<string, string> = {
-  GTE: "≥", GT: ">", LTE: "≤", LT: "<", EQ: "=",
-};
+const OPERATOR_OPTIONS = [
+  { value: "LTE", label: "Up to",      symbol: "≤" },
+  { value: "GTE", label: "At least",   symbol: "≥" },
+  { value: "EQ",  label: "Exactly",    symbol: "=" },
+  { value: "LT",  label: "Less than",  symbol: "<" },
+  { value: "GT",  label: "More than",  symbol: ">" },
+] as const;
 
 // ── Rule form (inline) ────────────────────────────────────────────────────────
 function RuleForm({
@@ -172,28 +175,46 @@ function RuleForm({
       ...defaultValues,
     },
   });
-  const watchNotice        = watch("noticeRequired");
-  const watchApproval      = watch("approvalRequired");
-  const watchedRuleTypes   = watch("applicableLeaveTypes") ?? [];
+  const watchNotice   = watch("noticeRequired");
+  const watchApproval = watch("approvalRequired");
+  const operator      = watch("operator");
 
   return (
-    <form onSubmit={handleSubmit(onSave)} className="rounded-xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-4">
-      <p className="text-xs font-semibold text-primary uppercase tracking-wide">
+    <form onSubmit={handleSubmit(onSave)}
+      className="rounded-2xl border border-primary/20 bg-primary/5 dark:bg-primary/10 p-5 space-y-5">
+
+      <p className="text-xs font-semibold text-primary uppercase tracking-widest">
         {mode === "create" ? "New Rule" : "Edit Rule"}
       </p>
 
-      {/* Condition */}
-      <div>
-        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-          Condition — if leave request is…
-        </label>
-        <div className="grid grid-cols-2 gap-3 items-start">
-          <Select {...register("operator")}>
-            {Object.entries(OPERATOR_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
-            ))}
-          </Select>
-          <div className="flex items-center gap-2">
+      {/* Step 1: Duration condition */}
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          When the leave request is…
+        </p>
+
+        {/* Operator pill selector */}
+        <div className="flex flex-wrap gap-2">
+          {OPERATOR_OPTIONS.map((op) => (
+            <button
+              key={op.value}
+              type="button"
+              onClick={() => setValue("operator", op.value as any)}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-semibold border transition-all",
+                operator === op.value
+                  ? "bg-primary text-white border-primary shadow-sm"
+                  : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 hover:border-primary/50 hover:text-primary"
+              )}
+            >
+              {op.label} <span className="opacity-60 ml-0.5">{op.symbol}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Days input */}
+        <div className="flex items-center gap-2">
+          <div className="w-28">
             <Input
               type="number"
               step="0.5"
@@ -202,99 +223,106 @@ function RuleForm({
               error={errors.minDays?.message}
               {...register("minDays")}
             />
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400 shrink-0">days</span>
           </div>
+          <span className="text-sm text-slate-500 dark:text-slate-400">days</span>
         </div>
       </div>
 
-      {/* Toggles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div
-          onClick={() => setValue("approvalRequired", !watchApproval)}
-          className={cn(
-            "flex items-center gap-2.5 p-3 rounded-lg border cursor-pointer select-none transition-colors text-sm",
-            watchApproval
-              ? "border-primary/40 bg-primary/5 text-primary"
-              : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300"
-          )}
-        >
-          <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center shrink-0", watchApproval ? "border-primary bg-primary" : "border-slate-300")}>
-            {watchApproval && <Check size={10} className="text-white" strokeWidth={3} />}
-          </div>
-          Approval Required
-        </div>
-        <div
-          onClick={() => setValue("noticeRequired", !watchNotice)}
-          className={cn(
-            "flex items-center gap-2.5 p-3 rounded-lg border cursor-pointer select-none transition-colors text-sm",
-            watchNotice
-              ? "border-primary/40 bg-primary/5 text-primary"
-              : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300"
-          )}
-        >
-          <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center shrink-0", watchNotice ? "border-primary bg-primary" : "border-slate-300")}>
-            {watchNotice && <Check size={10} className="text-white" strokeWidth={3} />}
-          </div>
-          Notice Required
-        </div>
-      </div>
+      <div className="border-t border-primary/10" />
 
-      {watchNotice && (
-        <Input
-          label="Minimum Notice Days"
-          type="number"
-          min="1"
-          placeholder="e.g. 3"
-          error={errors.minNoticeDays?.message}
-          {...register("minNoticeDays")}
-        />
-      )}
-
-      {/* Leave type applicability */}
-      <div>
-        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-          Applies to Leave Types{" "}
-          <span className="text-slate-400 font-normal">(leave empty = all types)</span>
-        </label>
-        <div className="flex flex-wrap gap-2 mt-1.5">
+      {/* Step 2: Leave type exception (optional) */}
+      <div className="space-y-2">
+        <div>
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            Exception — limit to specific leave types
+          </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+            Select leave types this rule applies to. Leave empty to apply to all types.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           {LEAVE_TYPE_OPTIONS.map((lt) => {
-            const selected = watchedRuleTypes.includes(lt.value);
+            const selected = (watch("applicableLeaveTypes") ?? []).includes(lt.value);
             return (
               <button
                 key={lt.value}
                 type="button"
                 onClick={() => {
-                  const current = watchedRuleTypes;
+                  const current = watch("applicableLeaveTypes") ?? [];
                   setValue(
                     "applicableLeaveTypes",
-                    selected
-                      ? current.filter((v) => v !== lt.value)
-                      : [...current, lt.value]
+                    selected ? current.filter((v) => v !== lt.value) : [...current, lt.value]
                   );
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all",
                   selected
                     ? `${lt.color} border-current`
-                    : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600"
+                    : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 hover:border-slate-300"
                 )}
               >
                 <div className={cn(
-                  "h-3.5 w-3.5 rounded border-2 flex items-center justify-center shrink-0",
+                  "h-3 w-3 rounded-full border-2 flex items-center justify-center shrink-0",
                   selected ? "border-current bg-current" : "border-slate-300 dark:border-slate-600"
                 )}>
-                  {selected && <Check size={9} className="text-white" strokeWidth={3} />}
+                  {selected && <Check size={8} className="text-white" strokeWidth={3} />}
                 </div>
                 {lt.label}
               </button>
             );
           })}
         </div>
+        {(watch("applicableLeaveTypes") ?? []).length > 0 && (
+          <p className="text-xs text-primary/80 bg-primary/5 rounded-lg px-3 py-2">
+            This rule will <strong>only</strong> trigger for the selected leave type(s) above.
+          </p>
+        )}
       </div>
 
-      <div className="flex gap-2 justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button type="submit" size="sm" disabled={saving} className="gap-1.5">
+      <div className="border-t border-primary/10" />
+
+      {/* Step 3: Requirements */}
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          Then require…
+        </p>
+
+        <Toggle
+          label="Admin approval"
+          description="The request must be reviewed and approved by an admin"
+          checked={watchApproval}
+          onChange={(v) => setValue("approvalRequired", v)}
+        />
+
+        <Toggle
+          label="Advance notice"
+          description="Employee must submit the request ahead of time"
+          checked={watchNotice}
+          onChange={(v) => setValue("noticeRequired", v)}
+        />
+
+        {watchNotice && (
+          <div className="flex items-center gap-2 pl-2 pt-1">
+            <div className="w-24">
+              <Input
+                type="number"
+                min="1"
+                placeholder="3"
+                error={errors.minNoticeDays?.message}
+                {...register("minNoticeDays")}
+              />
+            </div>
+            <span className="text-sm text-slate-500 dark:text-slate-400">days in advance</span>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 justify-end pt-1">
+        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={saving} className="gap-1.5 min-w-[90px]">
           {saving && <WeaveSpinner size={12} className="animate-spin" />}
           {mode === "create" ? "Add Rule" : "Save Rule"}
         </Button>
@@ -334,7 +362,7 @@ export default function EditPolicyPage() {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BasicFormValues>({
     resolver: zodResolver(basicSchema),
     defaultValues: {
-      leaveType: "GENERAL", probationRule: "NO_LEAVES",
+      probationRule: "NO_LEAVES",
       approvalRequired: true, halfDayAllowed: true,
       carryForward: false, noticeRequired: false,
     },
@@ -368,7 +396,6 @@ export default function EditPolicyPage() {
       setPolicy(found);
       reset({
         name:             found.name,
-        leaveType:        found.leaveType as any,
         daysAllowed:      String(found.daysAllowed),
         probationRule:    found.probationRule as any,
         approvalRequired: found.approvalRequired,
@@ -585,22 +612,14 @@ export default function EditPolicyPage() {
               error={errors.name?.message}
               {...register("name")}
             />
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Days / Year *"
-                type="number"
-                step="0.5"
-                min="0"
-                error={errors.daysAllowed?.message}
-                {...register("daysAllowed")}
-              />
-              <Select label="Leave Type" {...register("leaveType")}>
-                <option value="GENERAL">All Types</option>
-                <option value="SICK">Sick</option>
-                <option value="TRANSPORT_WEATHER">Transport / Weather</option>
-                <option value="PERSONAL">Personal</option>
-              </Select>
-            </div>
+            <Input
+              label="Days / Year *"
+              type="number"
+              step="0.5"
+              min="0"
+              error={errors.daysAllowed?.message}
+              {...register("daysAllowed")}
+            />
             <Select label="Probation Rule" {...register("probationRule")}>
               <option value="NONE">No restriction during probation</option>
               <option value="NO_LEAVES">No leaves allowed during probation</option>
@@ -643,8 +662,8 @@ export default function EditPolicyPage() {
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
         <SectionHeader
           icon={ShieldCheck}
-          title="Conditional Rules"
-          description="Enforce approval or notice requirements based on leave duration"
+          title="Rules"
+          description="Set approval or notice requirements based on how many days are requested"
           action={
             !showAddRule && (
               <Button size="sm" variant="outline" onClick={() => { setShowAddRule(true); setEditingRule(null); }} className="gap-1.5">
@@ -676,25 +695,11 @@ export default function EditPolicyPage() {
                   saving={ruleSaving}
                 />
               ) : (
-                <div key={rule.id} className="flex items-start justify-between bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800 px-4 py-3 gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
-                      If leave is{" "}
-                      <span className="text-primary font-semibold">
-                        {OPERATOR_SYMBOLS[rule.operator]} {rule.minDays} day{rule.minDays !== 1 ? "s" : ""}
-                      </span>
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                      <span className={rule.approvalRequired ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}>
-                        {rule.approvalRequired ? "✓" : "✗"} Approval
-                      </span>
-                      {rule.noticeRequired && (
-                        <span className="text-amber-600 dark:text-amber-400">⚠ {rule.minNoticeDays}d notice</span>
-                      )}
-                    </p>
-                    {/* Leave type badges */}
+                <div key={rule.id} className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 px-4 py-3 gap-3">
+                  <div className="min-w-0 flex-1">
+                    {/* Leave type badges (exception indicator) */}
                     {((rule as any).applicableLeaveTypes?.length ?? 0) > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
+                      <div className="flex flex-wrap gap-1 mb-1.5">
                         {((rule as any).applicableLeaveTypes as string[]).map((t) => {
                           const opt = LEAVE_TYPE_OPTIONS.find((o) => o.value === t);
                           return opt ? (
@@ -703,14 +708,49 @@ export default function EditPolicyPage() {
                             </span>
                           ) : null;
                         })}
+                        <span className="inline-flex items-center text-[10px] text-slate-400 dark:text-slate-500 italic">
+                          only
+                        </span>
                       </div>
                     )}
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      If leave is{" "}
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {OPERATOR_LABELS[rule.operator]} {rule.minDays} day{rule.minDays !== 1 ? "s" : ""}
+                      </span>
+                    </p>
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full",
+                        rule.approvalRequired
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"
+                          : "bg-slate-100 text-slate-400 dark:bg-slate-800"
+                      )}>
+                        <Check size={10} strokeWidth={3} />
+                        {rule.approvalRequired ? "Approval required" : "No approval needed"}
+                      </span>
+                      {rule.noticeRequired ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                          ⏰ {rule.minNoticeDays} day{rule.minNoticeDays !== 1 ? "s" : ""} notice
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center text-xs text-slate-400 dark:text-slate-500">
+                          No notice required
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => { setEditingRule(rule); setShowAddRule(false); }} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <button
+                      onClick={() => { setEditingRule(rule); setShowAddRule(false); }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
                       <Pencil size={13} />
                     </button>
-                    <button onClick={() => handleDeleteRule(rule.id)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                    <button
+                      onClick={() => handleDeleteRule(rule.id)}
+                      className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    >
                       <X size={13} />
                     </button>
                   </div>
@@ -722,7 +762,7 @@ export default function EditPolicyPage() {
 
         {ruleCount === 0 && !showAddRule && (
           <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-4">
-            No rules yet. Rules let you enforce approval or notice requirements conditionally.
+            No rules yet. Add one to control approval or notice based on leave duration.
           </p>
         )}
 

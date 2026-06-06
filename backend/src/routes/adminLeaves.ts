@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import {
   getAdminLeaves,
+  getLeaveById,
   approveLeave,
   rejectLeave,
   bulkApproveLeaves,
@@ -29,6 +30,7 @@ router.get('/balance/:employeeId', getEmployeeBalanceAdmin);
 router.get('/employee/:employeeId', getEmployeeLeavesAdmin);
 
 // Dynamic :id routes
+router.get('/:id', getLeaveById);
 router.patch('/:id/approve', approveLeave);
 router.patch('/:id/reject', rejectLeave);
 router.patch('/:id/override-absent', overrideAbsent);

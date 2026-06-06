@@ -84,10 +84,151 @@ export const getAdminLeaves = async (req: AuthRequest, res: Response): Promise<a
   }
 };
 
+// ── GET /api/admin/leaves/:id ─────────────────────────────────────────────────
+export const getLeaveById = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id = String(req.params['id']);
+
+    const leave = await prisma.leaveApplication.findUnique({
+      where: { id },
+      include: {
+        employee: {
+          include: {
+            user: { select: { email: true } },
+            leavePolicy: { include: { rules: true } },
+          },
+        },
+      },
+    });
+
+    if (!leave) return res.status(404).json({ message: 'Leave not found' });
+
+    const leaveYear = leave.fromDate.getFullYear();
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const [thisMonthLeaves, lastMonthLeaves, balance, orgSettings] = await Promise.all([
+      prisma.leaveApplication.findMany({
+        where: {
+          employeeId: leave.employeeId,
+          fromDate: { gte: thisMonthStart, lte: thisMonthEnd },
+          status: { in: ['APPROVED', 'PENDING'] },
+          NOT: { id },
+        },
+        orderBy: { fromDate: 'asc' },
+      }),
+      prisma.leaveApplication.findMany({
+        where: {
+          employeeId: leave.employeeId,
+          fromDate: { gte: lastMonthStart, lte: lastMonthEnd },
+          status: { in: ['APPROVED', 'PENDING'] },
+        },
+        orderBy: { fromDate: 'asc' },
+      }),
+      prisma.leaveBalance.findFirst({
+        where: { employeeId: leave.employeeId, year: leaveYear, isArchived: false },
+      }),
+      prisma.orgSettings.findUnique({ where: { id: 'global' } }),
+    ]);
+
+    const thisMonthApproved = thisMonthLeaves
+      .filter((l) => l.status === 'APPROVED')
+      .reduce((s, l) => s + l.totalDays, 0);
+    const thisMonthTotal = thisMonthLeaves.reduce((s, l) => s + l.totalDays, 0);
+    const lastMonthTotal = lastMonthLeaves.reduce((s, l) => s + l.totalDays, 0);
+
+    // Smart suggestions
+    const suggestions: Array<{
+      type: string;
+      severity: 'info' | 'warning' | 'error';
+      message: string;
+      suggestedPaidDays?: number;
+      suggestedUnpaidDays?: number;
+    }> = [];
+
+    if (leave.noticeViolation) {
+      suggestions.push({
+        type: 'NOTICE_VIOLATION',
+        severity: 'warning',
+        message: 'Employee did not meet the required advance notice period. You may still approve at your discretion.',
+      });
+    }
+
+    if (leave.status === 'PENDING' && (orgSettings as any)?.monthlyLeaveLimitEnabled && (orgSettings as any)?.monthlyLeaveLimit) {
+      const limit = (orgSettings as any).monthlyLeaveLimit as number;
+      const totalWithCurrent = thisMonthApproved + leave.totalDays;
+      if (totalWithCurrent > limit) {
+        const maxPaid = Math.max(0, limit - thisMonthApproved);
+        const overLimit = leave.totalDays - maxPaid;
+        suggestions.push({
+          type: 'MONTHLY_LIMIT_EXCEEDED',
+          severity: 'error',
+          message: `Approving this exceeds the monthly limit of ${limit} days. Employee has already used ${thisMonthApproved}d this month. Recommended split: ${maxPaid}d paid + ${overLimit}d unpaid.`,
+          suggestedPaidDays: maxPaid,
+          suggestedUnpaidDays: overLimit,
+        });
+      } else {
+        suggestions.push({
+          type: 'WITHIN_LIMIT',
+          severity: 'info',
+          message: `Within monthly limit. After approval: ${totalWithCurrent}d of ${limit}d used this month.`,
+        });
+      }
+    }
+
+    if (leave.status === 'PENDING' && balance) {
+      if (balance.remainingDays <= 0) {
+        suggestions.push({
+          type: 'NO_BALANCE',
+          severity: 'error',
+          message: 'Employee has no paid leave balance remaining. This leave must be fully unpaid.',
+          suggestedPaidDays: 0,
+          suggestedUnpaidDays: leave.totalDays,
+        });
+      } else if (balance.remainingDays < leave.totalDays) {
+        const canPay = balance.remainingDays;
+        const unpaid = leave.totalDays - canPay;
+        suggestions.push({
+          type: 'PARTIAL_BALANCE',
+          severity: 'warning',
+          message: `Only ${canPay}d paid balance remaining. ${unpaid}d should be marked unpaid.`,
+          suggestedPaidDays: canPay,
+          suggestedUnpaidDays: unpaid,
+        });
+      }
+    }
+
+    return res.json({
+      leave,
+      context: {
+        thisMonthLeaves,
+        lastMonthLeaves,
+        thisMonthTotal,
+        thisMonthApproved,
+        lastMonthTotal,
+        monthlyLimit: (orgSettings as any)?.monthlyLeaveLimit ?? null,
+        monthlyLimitEnabled: (orgSettings as any)?.monthlyLeaveLimitEnabled ?? false,
+        balance,
+        suggestions,
+      },
+    });
+  } catch (error) {
+    logger.error('getLeaveById error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 // ── PATCH /api/admin/leaves/:id/approve ──────────────────────────────────────
 export const approveLeave = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const id = String(req.params['id']);
+    const { paidDays: bodyPaidDays, unpaidDays: bodyUnpaidDays } = req.body as {
+      paidDays?: number;
+      unpaidDays?: number;
+    };
 
     const leave = await prisma.leaveApplication.findUnique({
       where: { id },
@@ -103,31 +244,63 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<any
       return res.status(400).json({ message: `Cannot approve a leave with status "${leave.status}".` });
     }
 
+    // Determine paid/unpaid split
+    let effectivePaidDays: number;
+    let effectiveUnpaidDays: number;
+
+    if (bodyPaidDays !== undefined || bodyUnpaidDays !== undefined) {
+      effectivePaidDays   = Number(bodyPaidDays ?? 0);
+      effectiveUnpaidDays = Number(bodyUnpaidDays ?? 0);
+      const splitTotal = effectivePaidDays + effectiveUnpaidDays;
+      if (Math.abs(splitTotal - leave.totalDays) > 0.01) {
+        return res.status(400).json({
+          message: `paidDays (${effectivePaidDays}) + unpaidDays (${effectiveUnpaidDays}) must equal totalDays (${leave.totalDays}).`,
+        });
+      }
+    } else {
+      effectivePaidDays   = leave.isUnpaid ? 0 : leave.totalDays;
+      effectiveUnpaidDays = leave.isUnpaid ? leave.totalDays : 0;
+    }
+
     const year = leave.fromDate.getFullYear();
     const balanceType = (leave.employee as any).leavePolicy?.leaveType ?? leave.leaveType;
 
-    if (!leave.isUnpaid) {
+    // Balance check only for paid portion
+    if (effectivePaidDays > 0) {
       const balance = await prisma.leaveBalance.findUnique({
         where: { employeeId_leaveType_year_isArchived: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false } },
       });
-      if (balance && balance.remainingDays < leave.totalDays) {
+      if (balance && balance.remainingDays < effectivePaidDays) {
         return res.status(400).json({
-          message: `Insufficient balance. Employee has ${balance.remainingDays} day(s) remaining, ${leave.totalDays} required.`,
+          message: `Insufficient balance. Employee has ${balance.remainingDays} day(s) remaining, ${effectivePaidDays} paid days required.`,
         });
       }
     }
 
-    // Atomic: approve + deduct balance must succeed or fail together
     await prisma.$transaction(async (tx) => {
-      await tx.leaveApplication.update({ where: { id }, data: { status: 'APPROVED' } });
-      if (!leave.isUnpaid) {
-        const balance = await tx.leaveBalance.findFirst({
-          where: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false },
-        });
-        if (balance) {
+      await tx.leaveApplication.update({
+        where: { id },
+        data: {
+          status:     'APPROVED',
+          paidDays:   effectivePaidDays,
+          unpaidDays: effectiveUnpaidDays,
+          isUnpaid:   effectiveUnpaidDays === leave.totalDays,
+        },
+      });
+      const balance = await tx.leaveBalance.findFirst({
+        where: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false },
+      });
+      if (balance) {
+        if (effectivePaidDays > 0) {
           await tx.leaveBalance.update({
             where: { id: balance.id },
-            data: { usedDays: { increment: leave.totalDays }, remainingDays: { decrement: leave.totalDays } },
+            data: { usedDays: { increment: effectivePaidDays }, remainingDays: { decrement: effectivePaidDays } },
+          });
+        }
+        if (effectiveUnpaidDays > 0) {
+          await tx.leaveBalance.update({
+            where: { id: balance.id },
+            data: { unpaidDaysUsed: { increment: effectiveUnpaidDays } },
           });
         }
       }
@@ -145,26 +318,40 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<any
           fromDate: leave.fromDate.toISOString().split('T')[0],
           toDate: leave.toDate.toISOString().split('T')[0],
           totalDays: leave.totalDays,
+          paidDays: effectivePaidDays,
+          unpaidDays: effectiveUnpaidDays,
         }),
       },
     }).catch((e) => logger.error('Failed to log approveLeave to auditLog:', e));
 
+    const paidUnpaidNote = effectiveUnpaidDays > 0
+      ? ` (${effectivePaidDays}d paid + ${effectiveUnpaidDays}d unpaid)`
+      : '';
+
     sendLeaveStatusEmail(
       (leave.employee as any).user?.email ?? '',
       leave.employee.fullName,
-      { leaveType: leave.leaveType, fromDate: leave.fromDate.toLocaleDateString('en-IN'), toDate: leave.toDate.toLocaleDateString('en-IN'), isHalfDay: leave.isHalfDay, halfDaySlot: leave.halfDaySlot, totalDays: leave.totalDays },
+      {
+        leaveType: leave.leaveType,
+        fromDate: leave.fromDate.toLocaleDateString('en-IN'),
+        toDate: leave.toDate.toLocaleDateString('en-IN'),
+        isHalfDay: leave.isHalfDay,
+        halfDaySlot: leave.halfDaySlot,
+        totalDays: leave.totalDays,
+        paidDays: effectivePaidDays,
+        unpaidDays: effectiveUnpaidDays,
+      },
       'APPROVED'
     ).catch((e) => logger.error('[email] sendLeaveStatusEmail APPROVED failed:', e));
 
-    // Notify employee
     await createNotification(
       leave.employee.userId,
       'LEAVE_APPROVED',
-      `Your leave application for ${leave.totalDays} day(s) from ${leave.fromDate.toLocaleDateString('en-IN')} was approved.`,
+      `Your leave application for ${leave.totalDays} day(s) from ${leave.fromDate.toLocaleDateString('en-IN')} was approved${paidUnpaidNote}.`,
       '/employee/my-leaves'
     );
 
-    return res.json({ message: 'Leave approved successfully.' });
+    return res.json({ message: 'Leave approved successfully.', paidDays: effectivePaidDays, unpaidDays: effectiveUnpaidDays });
   } catch (error) {
     logger.error('approveLeave error:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -275,17 +462,34 @@ export const bulkApproveLeaves = async (req: AuthRequest, res: Response): Promis
           }
         }
 
-        // Atomic: approve + deduct balance must succeed or fail together
+        // For bulk approve, treat the leave as fully paid unless isUnpaid was already set
+        const bulkPaidDays   = leave.isUnpaid ? 0 : leave.totalDays;
+        const bulkUnpaidDays = leave.isUnpaid ? leave.totalDays : 0;
+
+        // Atomic: approve + deduct balance + track unpaid
         await prisma.$transaction(async (tx) => {
-          await tx.leaveApplication.update({ where: { id }, data: { status: 'APPROVED' } });
-          if (!leave.isUnpaid) {
-            const balance = await tx.leaveBalance.findFirst({
-              where: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false },
-            });
-            if (balance) {
+          await tx.leaveApplication.update({
+            where: { id },
+            data: {
+              status:     'APPROVED',
+              paidDays:   bulkPaidDays,
+              unpaidDays: bulkUnpaidDays,
+            },
+          });
+          const balance = await tx.leaveBalance.findFirst({
+            where: { employeeId: leave.employeeId, leaveType: balanceType, year, isArchived: false },
+          });
+          if (balance) {
+            if (bulkPaidDays > 0) {
               await tx.leaveBalance.update({
                 where: { id: balance.id },
-                data: { usedDays: { increment: leave.totalDays }, remainingDays: { decrement: leave.totalDays } },
+                data: { usedDays: { increment: bulkPaidDays }, remainingDays: { decrement: bulkPaidDays } },
+              });
+            }
+            if (bulkUnpaidDays > 0) {
+              await tx.leaveBalance.update({
+                where: { id: balance.id },
+                data: { unpaidDaysUsed: { increment: bulkUnpaidDays } },
               });
             }
           }
@@ -617,13 +821,15 @@ export const importLeave = async (req: AuthRequest, res: Response): Promise<any>
         reason,
         status: 'APPROVED',
         isAdminEntry: true,
+        paidDays:   totalDays, // admin imports are treated as fully paid
+        unpaidDays: 0,
       },
     });
 
     await prisma.leaveBalance.update({
       where: { id: balance.id },
       data: {
-        usedDays: { increment: totalDays },
+        usedDays:     { increment: totalDays },
         remainingDays: { decrement: totalDays },
       },
     });
@@ -728,6 +934,8 @@ export const importBulkLeaves = async (req: AuthRequest, res: Response): Promise
             reason,
             status: 'APPROVED',
             isAdminEntry: true,
+            paidDays:   totalDays, // admin imports are fully paid
+            unpaidDays: 0,
           },
         });
 

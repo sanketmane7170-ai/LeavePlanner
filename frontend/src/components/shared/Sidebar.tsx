@@ -71,6 +71,7 @@ const adminNav: NavItem[] = [
     icon: Settings,
     children: [
       { href: "/admin/settings/org", label: "Org Profile" },
+      { href: "/admin/settings/leave-limits", label: "Leave Limits" },
       { href: "/admin/settings/holidays", label: "Public Holidays" },
       { href: "/admin/settings/departments", label: "Departments" },
       { href: "/admin/settings/roles", label: "Roles" },

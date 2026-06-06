@@ -12,6 +12,7 @@ import {
   sendLeaveAppliedAdminEmail,
   sendLeaveSubmittedEmail,
   sendLeaveCancelledAdminEmail,
+  sendLeaveStatusEmail,
 } from '../services/emailService';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -159,6 +160,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
       isHalfDay = false,
       halfDaySlot,
       reason,
+      requestedUnpaid = false,
     } = req.body as {
       leaveType: string;
       fromDate: string;
@@ -166,6 +168,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
       isHalfDay?: boolean;
       halfDaySlot?: string;
       reason: string;
+      requestedUnpaid?: boolean;
     };
 
     if (!leaveType || !fromDate || !toDate || !reason) {
@@ -237,9 +240,14 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
           return res.status(400).json({ message: 'Leave is not permitted during your probation period.' });
         }
         if (employee.leavePolicy.probationRule === 'UNPAID_ALLOWED') {
-          isUnpaid = true; // allowed, but no balance deduction
+          isUnpaid = true;
         }
       }
+    }
+
+    // Employee can voluntarily request unpaid leave (e.g., when balance is insufficient)
+    if (requestedUnpaid && !isUnpaid) {
+      isUnpaid = true;
     }
 
     // Base settings from policy
@@ -251,15 +259,31 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
     const rules = (employee.leavePolicy as any).rules as Array<{
       operator: string; minDays: number;
       approvalRequired: boolean; noticeRequired: boolean; minNoticeDays: number;
+      applicableLeaveTypes: string[];
     }> ?? [];
 
     if (rules.length > 0) {
-      const matching = rules.filter((r) => evaluateOperator(totalDays, r.operator, r.minDays));
+      const matching = rules.filter((r) => {
+        // Duration must match
+        if (!evaluateOperator(totalDays, r.operator, r.minDays)) return false;
+        // If rule is scoped to specific leave types, the applied type must be in that list
+        if (r.applicableLeaveTypes?.length > 0 && !r.applicableLeaveTypes.includes(leaveType)) return false;
+        return true;
+      });
       if (matching.length > 0) {
-        // For GTE/GT: highest-threshold rule wins (most specific for the duration)
-        // For LTE/LT: lowest-threshold rule wins (most restrictive upper bound)
-        // Sort descending by minDays — for GTE/GT this gives the strictest applicable rule
-        matching.sort((a, b) => b.minDays - a.minDays);
+        // Pick the most specific matching rule.
+        // Specificity: EQ (exact) > GTE/GT (higher floor = narrower) > LTE/LT (lower ceiling = narrower)
+        const specificity = (r: { operator: string; minDays: number }): number => {
+          switch (r.operator) {
+            case 'EQ':  return 1_000_000;           // exact match always wins
+            case 'GTE': return r.minDays;            // higher floor = more specific
+            case 'GT':  return r.minDays + 0.4;
+            case 'LTE': return 1000 - r.minDays;    // lower ceiling = more specific
+            case 'LT':  return 1000 - r.minDays + 0.4;
+            default:    return 0;
+          }
+        };
+        matching.sort((a, b) => specificity(b) - specificity(a));
         const applied = matching[0];
         requiresApproval = applied.approvalRequired;
         effectiveNoticeRequired = applied.noticeRequired;
@@ -309,7 +333,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
       year
     );
 
-    // Unpaid leaves (during probation) bypass balance checks
+    // Unpaid leaves bypass balance checks — voluntary unpaid also bypasses
     let balance = null;
     if (!isUnpaid) {
       balance = await getOrInitBalance(
@@ -321,10 +345,16 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
       );
       if (balance.remainingDays < totalDays) {
         return res.status(400).json({
-          message: `Insufficient balance. ${balance.remainingDays} day(s) remaining, ${totalDays} required.`,
+          message: `Insufficient balance. ${balance.remainingDays} day(s) remaining, ${totalDays} required. You can resubmit as an unpaid leave.`,
+          insufficientBalance: true,
+          remainingDays: balance.remainingDays,
         });
       }
     }
+
+    // Determine paidDays/unpaidDays for auto-approved leaves (set immediately)
+    const autoApprovedPaidDays   = !requiresApproval ? (isUnpaid ? 0 : totalDays) : undefined;
+    const autoApprovedUnpaidDays = !requiresApproval ? (isUnpaid ? totalDays : 0) : undefined;
 
     const application = await prisma.leaveApplication.create({
       data: {
@@ -338,6 +368,8 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
         reason,
         status: requiresApproval ? 'PENDING' : 'APPROVED',
         isUnpaid,
+        paidDays:   autoApprovedPaidDays,
+        unpaidDays: autoApprovedUnpaidDays,
         noticeViolation,
       },
     });
@@ -358,14 +390,22 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
       },
     }).catch((e) => logger.error('Failed to log applyLeave to auditLog:', e));
 
-    if (!requiresApproval && !isUnpaid && balance) {
-      await prisma.leaveBalance.update({
-        where: { id: balance.id },
-        data: {
-          usedDays: { increment: totalDays },
-          remainingDays: { decrement: totalDays },
-        },
-      });
+    if (!requiresApproval) {
+      if (!isUnpaid && balance) {
+        await prisma.leaveBalance.update({
+          where: { id: balance.id },
+          data: {
+            usedDays:     { increment: totalDays },
+            remainingDays: { decrement: totalDays },
+          },
+        });
+      } else if (isUnpaid && balance) {
+        // Track unpaid days consumed even though balance is not deducted
+        await prisma.leaveBalance.update({
+          where: { id: balance.id },
+          data: { unpaidDaysUsed: { increment: totalDays } },
+        }).catch(() => {}); // non-fatal — balance may not exist for unpaid-only
+      }
     }
 
     // In-app notifications for admins
@@ -403,13 +443,30 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<any> 
         { fullName: employee.fullName, employeeId: employee.employeeId, department: employee.department },
         emailDetails
       ).catch((e) => logger.error('[email] sendLeaveAppliedAdminEmail failed:', e));
-    }
 
-    sendLeaveSubmittedEmail(
-      (employee as any).user?.email ?? '',
-      employee.fullName,
-      emailDetails
-    ).catch((e) => logger.error('[email] sendLeaveSubmittedEmail failed:', e));
+      sendLeaveSubmittedEmail(
+        (employee as any).user?.email ?? '',
+        employee.fullName,
+        emailDetails
+      ).catch((e) => logger.error('[email] sendLeaveSubmittedEmail failed:', e));
+    } else {
+      // Auto-approved: send approval email directly (skip the "submitted" email)
+      sendLeaveStatusEmail(
+        (employee as any).user?.email ?? '',
+        employee.fullName,
+        {
+          leaveType,
+          fromDate:    from.toLocaleDateString('en-IN'),
+          toDate:      to.toLocaleDateString('en-IN'),
+          isHalfDay,
+          halfDaySlot: halfDaySlot ?? null,
+          totalDays,
+          paidDays:    isUnpaid ? 0 : totalDays,
+          unpaidDays:  isUnpaid ? totalDays : 0,
+        },
+        'APPROVED'
+      ).catch((e) => logger.error('[email] sendLeaveStatusEmail auto-approved failed:', e));
+    }
 
     return res.status(201).json({
       message: requiresApproval

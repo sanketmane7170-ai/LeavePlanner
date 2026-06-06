@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Search,
@@ -10,22 +11,14 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
-  ShieldAlert,
   Users,
   AlertTriangle,
-  Home,
+  ExternalLink,
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatDate, LEAVE_TYPE_LABELS, leaveStatusVariant } from "@/lib/utils";
 import type { LeaveApplication } from "@/types";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -52,12 +45,6 @@ interface LeaveWithEmployee extends LeaveApplication {
   };
 }
 
-interface EmployeeBalanceSummary {
-  year: number;
-  leaveBalance: { totalDays: number; usedDays: number; remainingDays: number } | null;
-  wfhBalance: { allowedDays: number; usedDays: number; pendingDays: number; remainingDays: number } | null;
-}
-
 // ── Status badge ──────────────────────────────────────────────────────────────
 type SV = "success" | "warning" | "destructive" | "gray" | "default";
 const svClass: Record<SV, string> = {
@@ -77,18 +64,9 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ── Detail row ────────────────────────────────────────────────────────────────
-function DetailRow({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="text-sm font-medium text-slate-900 dark:text-white mt-0.5">{value || "—"}</p>
-    </div>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LeaveRequestsPage() {
+  const router = useRouter();
   const currentYear = new Date().getFullYear();
 
   const [leaves, setLeaves] = useState<LeaveWithEmployee[]>([]);
@@ -107,12 +85,6 @@ export default function LeaveRequestsPage() {
 
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // Detail sheet
-  const [detailLeave, setDetailLeave] = useState<LeaveWithEmployee | null>(null);
-  const [rejectComment, setRejectComment] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
-  const [employeeBalance, setEmployeeBalance] = useState<EmployeeBalanceSummary | null>(null);
 
   // Bulk reject modal
   const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
@@ -146,15 +118,6 @@ export default function LeaveRequestsPage() {
   useEffect(() => { fetchLeaves(); }, [fetchLeaves]);
   useEffect(() => { setPage(1); }, [year, statusFilter, typeFilter, search, dateFrom, dateTo]);
 
-  // Fetch employee balance when detail sheet opens
-  useEffect(() => {
-    if (!detailLeave) { setEmployeeBalance(null); return; }
-    const yr = new Date(detailLeave.fromDate).getFullYear();
-    api.get(`/admin/employees/${detailLeave.employee.id}/balance?year=${yr}`)
-      .then((r) => setEmployeeBalance(r.data))
-      .catch(() => setEmployeeBalance(null));
-  }, [detailLeave]);
-
   // ── Selection ────────────────────────────────────────────────────────────
   const pendingLeaves = leaves.filter((l) => l.status === "PENDING");
   const allPendingSelected = pendingLeaves.length > 0 && pendingLeaves.every((l) => selectedIds.has(l.id));
@@ -173,54 +136,6 @@ export default function LeaveRequestsPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
-
-  // ── Approve single ────────────────────────────────────────────────────────
-  const handleApprove = async (leave: LeaveWithEmployee) => {
-    setActionLoading(true);
-    try {
-      await api.patch(`/admin/leaves/${leave.id}/approve`);
-      toast.success(`Leave approved for ${leave.employee.fullName}`);
-      setDetailLeave(null);
-      fetchLeaves();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to approve leave");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // ── Reject single ─────────────────────────────────────────────────────────
-  const handleReject = async (leave: LeaveWithEmployee) => {
-    if (!rejectComment.trim()) { toast.error("Comment is required for rejection"); return; }
-    setActionLoading(true);
-    try {
-      await api.patch(`/admin/leaves/${leave.id}/reject`, { comment: rejectComment });
-      toast.success(`Leave rejected`);
-      setDetailLeave(null);
-      setRejectComment("");
-      fetchLeaves();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to reject leave");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // ── Override absent ───────────────────────────────────────────────────────
-  const handleOverrideAbsent = async (leave: LeaveWithEmployee) => {
-    if (!confirm("Override this absence to Approved?")) return;
-    setActionLoading(true);
-    try {
-      await api.patch(`/admin/leaves/${leave.id}/override-absent`);
-      toast.success("Absence overridden to Approved");
-      setDetailLeave(null);
-      fetchLeaves();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to override");
-    } finally {
-      setActionLoading(false);
-    }
   };
 
   // ── Bulk approve ──────────────────────────────────────────────────────────
@@ -435,7 +350,7 @@ export default function LeaveRequestsPage() {
                       "hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer",
                       isSelected && "bg-primary/5 dark:bg-primary/10"
                     )}
-                    onClick={() => { setDetailLeave(leave); setRejectComment(""); }}
+                    onClick={() => router.push(`/admin/leave-requests/leave/${leave.id}`)}
                   >
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       {isPending && (
@@ -472,6 +387,14 @@ export default function LeaveRequestsPage() {
                     </td>
                     <td className="px-4 py-3.5">
                       <span className="font-semibold text-slate-900 dark:text-white">{leave.totalDays}</span>
+                      {leave.status === "APPROVED" && leave.unpaidDays != null && leave.unpaidDays > 0 && (
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">
+                          {leave.paidDays}d paid · {leave.unpaidDays}d unpaid
+                        </p>
+                      )}
+                      {leave.status === "APPROVED" && leave.unpaidDays == null && leave.isUnpaid && (
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">Unpaid</p>
+                      )}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -491,24 +414,13 @@ export default function LeaveRequestsPage() {
                       {formatDate(leave.createdAt)}
                     </td>
                     <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                      {isPending && (
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleApprove(leave)}
-                            className="p-1.5 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                            title="Approve"
-                          >
-                            <CheckCircle2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => { setDetailLeave(leave); setRejectComment(""); }}
-                            className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                            title="Review / Reject"
-                          >
-                            <XCircle size={14} />
-                          </button>
-                        </div>
-                      )}
+                      <button
+                        onClick={() => router.push(`/admin/leave-requests/leave/${leave.id}`)}
+                        className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-500 hover:bg-primary/10 hover:text-primary transition-colors"
+                        title="Open full review"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -533,7 +445,7 @@ export default function LeaveRequestsPage() {
           leaves.map((leave) => (
             <div
               key={leave.id}
-              onClick={() => { setDetailLeave(leave); setRejectComment(""); }}
+              onClick={() => router.push(`/admin/leave-requests/leave/${leave.id}`)}
               className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 cursor-pointer active:scale-[0.99]"
             >
               <div className="flex items-start justify-between gap-2">
@@ -579,178 +491,6 @@ export default function LeaveRequestsPage() {
           </div>
         </div>
       )}
-
-      {/* ── Leave Detail Sheet ─────────────────────────────────────────────── */}
-      <Sheet open={!!detailLeave} onOpenChange={(o) => !o && setDetailLeave(null)}>
-        <SheetContent className="w-full max-w-lg">
-          {detailLeave && (
-            <>
-              <SheetHeader className="pr-10">
-                <SheetTitle>Leave Request Details</SheetTitle>
-                <SheetDescription>
-                  {detailLeave.employee.fullName} · {detailLeave.employee.employeeId}
-                </SheetDescription>
-              </SheetHeader>
-
-              <div className="flex-1 overflow-y-auto p-6 scrollbar-thin space-y-1">
-                {/* Status row */}
-                <div className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-xs text-slate-500">Status</span>
-                  <StatusBadge status={detailLeave.status} />
-                </div>
-
-                <DetailRow label="Employee" value={`${detailLeave.employee.fullName} (${detailLeave.employee.employeeId})`} />
-                <DetailRow label="Department" value={detailLeave.employee.department} />
-                <DetailRow label="Email" value={detailLeave.employee.user.email} />
-                <DetailRow label="Leave Type" value={LEAVE_TYPE_LABELS[detailLeave.leaveType] ?? detailLeave.leaveType} />
-                <DetailRow
-                  label="Period"
-                  value={
-                    detailLeave.fromDate === detailLeave.toDate
-                      ? formatDate(detailLeave.fromDate) + (detailLeave.isHalfDay ? ` (${detailLeave.halfDaySlot === "FIRST_HALF" ? "First half" : "Second half"})` : "")
-                      : `${formatDate(detailLeave.fromDate)} → ${formatDate(detailLeave.toDate)}`
-                  }
-                />
-                <DetailRow label="Total Days" value={`${detailLeave.totalDays} day${detailLeave.totalDays !== 1 ? "s" : ""}`} />
-                <DetailRow label="Reason" value={detailLeave.reason} />
-                <DetailRow label="Applied On" value={formatDate(detailLeave.createdAt)} />
-
-                {detailLeave.adminComment && (
-                  <div className="mt-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Admin Comment</p>
-                    <p className="text-sm text-slate-700 dark:text-slate-300">{detailLeave.adminComment}</p>
-                  </div>
-                )}
-
-                {/* Employee balance summary */}
-                {employeeBalance && (
-                  <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2.5">
-                      Current Balance ({employeeBalance.year})
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {employeeBalance.leaveBalance && (
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                            <CalendarDays size={13} className="text-blue-600 dark:text-blue-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Leave</p>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {employeeBalance.leaveBalance.remainingDays}
-                              <span className="text-xs font-normal text-slate-400 ml-0.5">
-                                / {employeeBalance.leaveBalance.totalDays}d
-                              </span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      {employeeBalance.wfhBalance && (
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-lg bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center shrink-0">
-                            <Home size={13} className="text-teal-600 dark:text-teal-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-slate-500 dark:text-slate-400">WFH</p>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {employeeBalance.wfhBalance.remainingDays}
-                              <span className="text-xs font-normal text-slate-400 ml-0.5">
-                                / {employeeBalance.wfhBalance.allowedDays}d
-                              </span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Notice period violation alert */}
-                {detailLeave.noticeViolation && (
-                  <div className="mt-4 flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                    <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                        Notice Period Not Met
-                      </p>
-                      <p className="text-xs text-amber-600 dark:text-amber-500 mt-1 leading-relaxed">
-                        This application was submitted without the minimum advance notice required by the employee's leave policy. You may still approve or reject at your discretion.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Actions for PENDING */}
-                {detailLeave.status === "PENDING" && (
-                  <div className="mt-6 space-y-4">
-                    {/* Approve */}
-                    <div className="p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-400 mb-2 flex items-center gap-1.5">
-                        <CheckCircle2 size={15} />
-                        Approve Leave
-                      </p>
-                      <Button
-                        className="w-full bg-green-600 hover:bg-green-700 text-white border-0"
-                        onClick={() => handleApprove(detailLeave)}
-                        disabled={actionLoading}
-                      >
-                        {actionLoading ? <WeaveSpinner className="animate-spin mr-2" size={15} /> : <CheckCircle2 size={15} className="mr-2" />}
-                        Approve
-                      </Button>
-                    </div>
-
-                    {/* Reject */}
-                    <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                      <p className="text-sm font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-1.5">
-                        <XCircle size={15} />
-                        Reject Leave
-                      </p>
-                      <textarea
-                        value={rejectComment}
-                        onChange={(e) => setRejectComment(e.target.value)}
-                        rows={2}
-                        placeholder="Rejection reason (required)…"
-                        className="w-full px-3 py-2 rounded-xl border border-red-200 dark:border-red-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-500/30 mb-2"
-                      />
-                      <Button
-                        variant="destructive"
-                        className="w-full"
-                        onClick={() => handleReject(detailLeave)}
-                        disabled={actionLoading || !rejectComment.trim()}
-                      >
-                        {actionLoading ? <WeaveSpinner className="animate-spin mr-2" size={15} /> : <XCircle size={15} className="mr-2" />}
-                        Reject
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Override for ABSENT */}
-                {detailLeave.status === "ABSENT" && (
-                  <div className="mt-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1.5">
-                      <ShieldAlert size={15} />
-                      Override Absence
-                    </p>
-                    <p className="text-xs text-amber-600 dark:text-amber-500 mb-3">
-                      This leave was auto-marked as absent. You can override it to Approved if the absence was justified.
-                    </p>
-                    <Button
-                      variant="outline"
-                      className="w-full border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30"
-                      onClick={() => handleOverrideAbsent(detailLeave)}
-                      disabled={actionLoading}
-                    >
-                      {actionLoading ? <WeaveSpinner className="animate-spin mr-2" size={15} /> : <ShieldAlert size={15} className="mr-2" />}
-                      Override to Approved
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
 
       {/* ── Bulk Reject Modal ──────────────────────────────────────────────── */}
       <Dialog open={bulkRejectOpen} onOpenChange={(o) => !o && setBulkRejectOpen(false)}>

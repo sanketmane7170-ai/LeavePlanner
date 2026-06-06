@@ -14,7 +14,8 @@ import { WeaveSpinner } from "@/components/ui/weave-spinner";
 import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type MusterStatus = "P" | "A" | "L" | "HD" | "WFH" | "WO" | "H" | "-" | "·";
+// U = Unpaid leave (fully unpaid approved leave, no salary impact)
+type MusterStatus = "P" | "A" | "L" | "U" | "HD" | "WFH" | "WO" | "H" | "-" | "·";
 
 interface CorrectionMeta {
   id: string;
@@ -32,7 +33,7 @@ interface MusterEmployee {
   attendance: Record<number, MusterStatus>;
   correctionMeta: Record<number, CorrectionMeta>;
   summary: {
-    present: number; absent: number; leave: number;
+    present: number; absent: number; leave: number; unpaidLeave: number;
     halfDay: number; wfh: number; weekOff: number;
     holiday: number; workingDays: number;
   };
@@ -48,7 +49,7 @@ interface MusterData {
   page: number;
   limit: number;
   totalPages: number;
-  totals: { present: number; absent: number; leave: number; wfh: number; halfDay: number };
+  totals: { present: number; absent: number; leave: number; unpaidLeave: number; wfh: number; halfDay: number };
 }
 
 interface TodaySummary {
@@ -67,26 +68,28 @@ interface CellDetail {
 
 // ── Status config (all classes explicit — no dynamic Tailwind strings) ────────
 const S: Record<MusterStatus, { label: string; cell: string; badge: string }> = {
-  P:   { label: "Present",   cell: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700",   badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700" },
-  A:   { label: "Absent",    cell: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-700",                           badge: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-700" },
-  L:   { label: "Leave",     cell: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border border-orange-200 dark:border-orange-700",         badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-700" },
-  HD:  { label: "Half Day",  cell: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-700",         badge: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-700" },
-  WFH: { label: "WFH",       cell: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700",                   badge: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-700" },
-  WO:  { label: "Week Off",  cell: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",                 badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700" },
-  H:   { label: "Holiday",   cell: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700",         badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-700" },
-  "-": { label: "Pre-joining", cell: "", badge: "" },
-  "·": { label: "Upcoming",  cell: "", badge: "" },
+  P:   { label: "Present",      cell: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700",   badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700" },
+  A:   { label: "Absent",       cell: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-700",                           badge: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-700" },
+  L:   { label: "Leave (Paid)", cell: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border border-orange-200 dark:border-orange-700",         badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-700" },
+  U:   { label: "Unpaid Leave", cell: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 border border-rose-200 dark:border-rose-700",                    badge: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-200 dark:border-rose-700" },
+  HD:  { label: "Half Day",     cell: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-700",         badge: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-700" },
+  WFH: { label: "WFH",          cell: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700",                    badge: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-700" },
+  WO:  { label: "Week Off",     cell: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",                  badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700" },
+  H:   { label: "Holiday",      cell: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700",         badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-700" },
+  "-": { label: "Pre-joining",  cell: "", badge: "" },
+  "·": { label: "Upcoming",     cell: "", badge: "" },
 };
 
 // Fixed summary column styles — no dynamic class generation
 const SUMMARY_COLS: { key: keyof MusterEmployee["summary"]; label: string; th: string; td: string }[] = [
-  { key: "present",     label: "P",   th: "text-emerald-600 dark:text-emerald-400", td: "text-emerald-700 dark:text-emerald-400 font-bold" },
-  { key: "absent",      label: "A",   th: "text-red-600 dark:text-red-400",         td: "text-red-700 dark:text-red-400 font-bold" },
-  { key: "leave",       label: "L",   th: "text-orange-600 dark:text-orange-400",   td: "text-orange-700 dark:text-orange-400 font-bold" },
-  { key: "wfh",         label: "WFH", th: "text-cyan-600 dark:text-cyan-400",       td: "text-cyan-700 dark:text-cyan-400 font-bold" },
-  { key: "halfDay",     label: "HD",  th: "text-yellow-600 dark:text-yellow-400",   td: "text-yellow-700 dark:text-yellow-400 font-bold" },
-  { key: "weekOff",     label: "WO",  th: "text-slate-500 dark:text-slate-400",     td: "text-slate-500 dark:text-slate-400" },
-  { key: "workingDays", label: "WDs", th: "text-blue-600 dark:text-blue-400",       td: "text-blue-700 dark:text-blue-400 font-bold" },
+  { key: "present",     label: "P",  th: "text-emerald-600 dark:text-emerald-400", td: "text-emerald-700 dark:text-emerald-400 font-bold" },
+  { key: "absent",      label: "A",  th: "text-red-600 dark:text-red-400",         td: "text-red-700 dark:text-red-400 font-bold" },
+  { key: "leave",       label: "L",  th: "text-orange-600 dark:text-orange-400",   td: "text-orange-700 dark:text-orange-400 font-bold" },
+  { key: "unpaidLeave", label: "U",  th: "text-rose-600 dark:text-rose-400",       td: "text-rose-700 dark:text-rose-400 font-bold" },
+  { key: "wfh",         label: "WFH",th: "text-cyan-600 dark:text-cyan-400",       td: "text-cyan-700 dark:text-cyan-400 font-bold" },
+  { key: "halfDay",     label: "HD", th: "text-yellow-600 dark:text-yellow-400",   td: "text-yellow-700 dark:text-yellow-400 font-bold" },
+  { key: "weekOff",     label: "WO", th: "text-slate-500 dark:text-slate-400",     td: "text-slate-500 dark:text-slate-400" },
+  { key: "workingDays", label: "WDs",th: "text-blue-600 dark:text-blue-400",       td: "text-blue-700 dark:text-blue-400 font-bold" },
 ];
 
 const DOW_SHORT = ["Su","Mo","Tu","We","Th","Fr","Sa"];
@@ -119,12 +122,12 @@ function exportExcel(data: MusterData, orgName = "Attendance Muster") {
   const musterHeader = [
     "Emp ID", "Name", "Department", "Designation",
     ...Array.from({ length: days }, (_, i) => String(i + 1)),
-    "P", "A", "L", "WFH", "HD", "WO", "H", "Working Days",
+    "P", "A", "L (Paid)", "U (Unpaid)", "WFH", "HD", "WO", "H", "Working Days",
   ];
   const musterRows = data.employees.map((e) => [
     e.employeeId, e.fullName, e.department ?? "", e.designation ?? "",
     ...Array.from({ length: days }, (_, i) => e.attendance[i + 1] ?? ""),
-    e.summary.present, e.summary.absent, e.summary.leave,
+    e.summary.present, e.summary.absent, e.summary.leave, e.summary.unpaidLeave,
     e.summary.wfh, e.summary.halfDay, e.summary.weekOff,
     e.summary.holiday, e.summary.workingDays,
   ]);
@@ -146,10 +149,10 @@ function exportExcel(data: MusterData, orgName = "Attendance Muster") {
   XLSX.utils.book_append_sheet(wb, musterWs, "Muster");
 
   // ── Sheet 2: Summary ──────────────────────────────────────────────────────
-  const summaryHeader = ["Emp ID", "Name", "Department", "Designation", "Working Days", "Present", "Leave", "Absent", "WFH", "Half Day", "Week Off", "Holiday"];
+  const summaryHeader = ["Emp ID", "Name", "Department", "Designation", "Working Days", "Present", "Paid Leave", "Unpaid Leave", "Absent", "WFH", "Half Day", "Week Off", "Holiday"];
   const summaryRows = data.employees.map((e) => [
     e.employeeId, e.fullName, e.department ?? "", e.designation ?? "",
-    e.summary.workingDays, e.summary.present, e.summary.leave,
+    e.summary.workingDays, e.summary.present, e.summary.leave, e.summary.unpaidLeave,
     e.summary.absent, e.summary.wfh, e.summary.halfDay,
     e.summary.weekOff, e.summary.holiday,
   ]);
@@ -361,7 +364,7 @@ export default function MusterViewPage() {
 
       {/* ── Legend ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {(["P","A","L","HD","WFH","WO","H"] as MusterStatus[]).map((s) => (
+        {(["P","A","L","U","HD","WFH","WO","H"] as MusterStatus[]).map((s) => (
           <span key={s} className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold", S[s].badge)}>
             {s} {S[s].label}
           </span>
@@ -576,7 +579,7 @@ export default function MusterViewPage() {
 }
 
 // ── Attendance Detail + Edit Modal ────────────────────────────────────────────
-const EDITABLE_STATUSES: MusterStatus[] = ["P", "A", "L", "HD", "WFH"];
+const EDITABLE_STATUSES: MusterStatus[] = ["P", "A", "L", "U", "HD", "WFH"];
 
 function AttendanceDetailModal({
   detail,
@@ -689,10 +692,12 @@ function AttendanceDetailModal({
             {/* Month summary */}
             <div className="grid grid-cols-4 gap-2 mb-5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
               {[
-                { label: "P",   val: detail.employee.summary.present,  cls: "text-emerald-600 dark:text-emerald-400" },
-                { label: "A",   val: detail.employee.summary.absent,   cls: "text-red-600 dark:text-red-400" },
-                { label: "L",   val: detail.employee.summary.leave,    cls: "text-orange-600 dark:text-orange-400" },
-                { label: "WFH", val: detail.employee.summary.wfh,      cls: "text-cyan-600 dark:text-cyan-400" },
+                { label: "P",      val: detail.employee.summary.present,     cls: "text-emerald-600 dark:text-emerald-400" },
+                { label: "A",      val: detail.employee.summary.absent,      cls: "text-red-600 dark:text-red-400" },
+                { label: "L",      val: detail.employee.summary.leave,       cls: "text-orange-600 dark:text-orange-400" },
+                { label: "U",      val: detail.employee.summary.unpaidLeave, cls: "text-rose-600 dark:text-rose-400" },
+                { label: "WFH",    val: detail.employee.summary.wfh,         cls: "text-cyan-600 dark:text-cyan-400" },
+                { label: "HD",     val: detail.employee.summary.halfDay,     cls: "text-yellow-600 dark:text-yellow-400" },
               ].map(({ label, val, cls }) => (
                 <div key={label} className="text-center">
                   <p className={cn("text-lg font-bold tabular-nums leading-tight", cls)}>{val}</p>

@@ -42,7 +42,8 @@ function isDayWorking(date: Date, workingDays: string[], saturdayRule: string): 
 }
 
 // Status codes used in the muster grid
-export type MusterStatus = 'P' | 'A' | 'L' | 'HD' | 'WFH' | 'WO' | 'H' | '-' | '·';
+// U = Unpaid leave (fully unpaid approved leave)
+export type MusterStatus = 'P' | 'A' | 'L' | 'U' | 'HD' | 'WFH' | 'WO' | 'H' | '-' | '·';
 
 // ── GET /api/admin/attendance/muster ─────────────────────────────────────────
 export const getMuster = async (req: AuthRequest, res: Response): Promise<any> => {
@@ -92,7 +93,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           fromDate: { lte: monthEnd },
           toDate:   { gte: monthStart },
         },
-        select: { employeeId: true, fromDate: true, toDate: true, isHalfDay: true, status: true, leaveType: true },
+        select: { employeeId: true, fromDate: true, toDate: true, isHalfDay: true, status: true, leaveType: true, isUnpaid: true, paidDays: true, unpaidDays: true },
       }),
       prisma.wfhApplication.findMany({
         where: {
@@ -160,7 +161,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
 
       const attendance:  Record<number, MusterStatus>                                 = {};
       const correctionMeta: Record<number, { id: string; originalStatus: string; correctedStatus: string; reason: string | null }> = {};
-      let present = 0, absent = 0, leave = 0, halfDay = 0, wfh = 0, weekOff = 0, holiday = 0;
+      let present = 0, absent = 0, leave = 0, unpaidLeave = 0, halfDay = 0, wfh = 0, weekOff = 0, holiday = 0;
       let workingTotal = 0;
 
       for (let day = 1; day <= daysInMonth; day++) {
@@ -201,9 +202,16 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
               return date >= from && date <= to;
             });
             if (matchedLeave) {
-              if (matchedLeave.status === 'ABSENT') { attendance[day] = 'A'; absent++; }
-              else if (matchedLeave.isHalfDay)      { attendance[day] = 'HD'; halfDay++; }
-              else                                  { attendance[day] = 'L'; leave++; }
+              if (matchedLeave.status === 'ABSENT') {
+                attendance[day] = 'A'; absent++;
+              } else if (matchedLeave.isHalfDay) {
+                attendance[day] = 'HD'; halfDay++;
+              } else if (matchedLeave.isUnpaid || (matchedLeave.paidDays !== null && matchedLeave.paidDays === 0)) {
+                // Fully unpaid leave — show U instead of L
+                attendance[day] = 'U'; unpaidLeave++;
+              } else {
+                attendance[day] = 'L'; leave++;
+              }
             } else {
               const matchedWfh = empWfh.find((w) => {
                 const wFrom = new Date(w.date); wFrom.setHours(0,0,0,0);
@@ -228,6 +236,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           if (oldStatus === 'P')   present--;
           else if (oldStatus === 'A')   absent--;
           else if (oldStatus === 'L')   leave--;
+          else if (oldStatus === 'U')   unpaidLeave--;
           else if (oldStatus === 'HD')  halfDay--;
           else if (oldStatus === 'WFH') wfh--;
           else if (oldStatus === 'WO')  weekOff--;
@@ -240,6 +249,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           if (newStatus === 'P')   present++;
           else if (newStatus === 'A')   absent++;
           else if (newStatus === 'L')   leave++;
+          else if (newStatus === 'U')   unpaidLeave++;
           else if (newStatus === 'HD')  halfDay++;
           else if (newStatus === 'WFH') wfh++;
           else if (newStatus === 'WO')  weekOff++;
@@ -262,20 +272,21 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
         designation: emp.designation,
         attendance,
         correctionMeta,
-        summary: { present, absent, leave, halfDay, wfh, weekOff, holiday, workingDays: workingTotal },
+        summary: { present, absent, leave, unpaidLeave, halfDay, wfh, weekOff, holiday, workingDays: workingTotal },
       };
     });
 
     // ── Overall totals (for the current page) ─────────────────────────────
     const totals = employees.reduce(
       (acc, e) => ({
-        present:  acc.present  + e.summary.present,
-        absent:   acc.absent   + e.summary.absent,
-        leave:    acc.leave    + e.summary.leave,
-        wfh:      acc.wfh      + e.summary.wfh,
-        halfDay:  acc.halfDay  + e.summary.halfDay,
+        present:     acc.present     + e.summary.present,
+        absent:      acc.absent      + e.summary.absent,
+        leave:       acc.leave       + e.summary.leave,
+        unpaidLeave: acc.unpaidLeave + e.summary.unpaidLeave,
+        wfh:         acc.wfh         + e.summary.wfh,
+        halfDay:     acc.halfDay     + e.summary.halfDay,
       }),
-      { present: 0, absent: 0, leave: 0, wfh: 0, halfDay: 0 }
+      { present: 0, absent: 0, leave: 0, unpaidLeave: 0, wfh: 0, halfDay: 0 }
     );
 
     return res.json({
@@ -413,7 +424,7 @@ export const upsertCorrection = async (req: AuthRequest, res: Response): Promise
       return res.status(400).json({ message: 'employeeId, date, and correctedStatus are required' });
     }
 
-    const validStatuses = ['P','A','L','HD','WFH','WO','H'];
+    const validStatuses = ['P','A','L','U','HD','WFH','WO','H'];
     if (!validStatuses.includes(correctedStatus)) {
       return res.status(400).json({ message: `Invalid correctedStatus. Must be one of: ${validStatuses.join(', ')}` });
     }

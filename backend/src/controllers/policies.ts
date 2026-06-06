@@ -97,7 +97,6 @@ export const updateLeavePolicy = async (req: AuthRequest, res: Response): Promis
     const id = String(req.params['id']);
     const {
       name,
-      leaveType,
       daysAllowed,
       approvalRequired,
       noticeRequired,
@@ -116,7 +115,6 @@ export const updateLeavePolicy = async (req: AuthRequest, res: Response): Promis
       where: { id },
       data: {
         ...(name !== undefined && { name: String(name) }),
-        ...(leaveType !== undefined && { leaveType: leaveType as any }),
         ...(daysAllowed !== undefined && { daysAllowed: Number(daysAllowed) }),
         ...(approvalRequired !== undefined && { approvalRequired: Boolean(approvalRequired) }),
         ...(noticeRequired !== undefined && { noticeRequired: Boolean(noticeRequired) }),
