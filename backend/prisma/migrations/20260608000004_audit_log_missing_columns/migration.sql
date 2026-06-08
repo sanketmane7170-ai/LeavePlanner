@@ -1,0 +1,3 @@
+ALTER TABLE "AuditLog"
+  ADD COLUMN IF NOT EXISTS "adminName" TEXT,
+  ADD COLUMN IF NOT EXISTS "ipAddress" TEXT;
