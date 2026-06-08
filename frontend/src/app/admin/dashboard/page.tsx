@@ -9,7 +9,8 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import {
-  Users, Clock, CalendarOff, Monitor, AlertCircle,  CheckCircle2, ChevronRight,
+  Users, Clock, CalendarOff, Monitor, AlertCircle, CheckCircle2, ChevronRight,
+  Key, RotateCcw, Copy,
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
@@ -105,6 +106,42 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
+  // Check-in code state
+  const [checkInCode, setCheckInCode]         = useState<string | null>(null);
+  const [checkInEnabled, setCheckInEnabled]   = useState(false);
+  const [codeGenerating, setCodeGenerating]   = useState(false);
+  const [codeCopied, setCodeCopied]           = useState(false);
+
+  useEffect(() => {
+    api.get("/admin/checkin/code").then(r => {
+      setCheckInCode(r.data.code);
+    }).catch(() => {});
+    api.get("/admin/checkin/settings").then(r => {
+      setCheckInEnabled(r.data.checkInEnabled);
+    }).catch(() => {});
+  }, []);
+
+  const handleGenerateCode = async () => {
+    setCodeGenerating(true);
+    try {
+      const res = await api.post("/admin/checkin/code/generate");
+      setCheckInCode(res.data.code);
+      toast.success(`Code generated: ${res.data.code}`);
+    } catch {
+      toast.error("Failed to generate code");
+    } finally {
+      setCodeGenerating(false);
+    }
+  };
+
+  const handleCopyCode = () => {
+    if (!checkInCode) return;
+    navigator.clipboard.writeText(checkInCode).then(() => {
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    });
+  };
+
   // Chart theme
   const gridColor  = isDark ? "#1e293b" : "#f1f5f9";
   const axisColor  = isDark ? "#64748b" : "#94a3b8";
@@ -189,6 +226,53 @@ export default function AdminDashboard() {
         <StatCard label="On WFH Today" value={stats?.onWfhToday ?? "—"} icon={Monitor} color="text-green-600 bg-green-50 dark:bg-green-900/20" />
         <StatCard label="Absent Today" value={stats?.absentToday ?? "—"} icon={AlertCircle} color="text-slate-500 bg-slate-100 dark:bg-slate-800" />
       </div>
+
+      {/* Daily Check-In Code banner — shown when check-in module is enabled */}
+      {checkInEnabled && (
+        <div className="flex flex-wrap items-center gap-5 p-5 rounded-2xl bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 shadow-sm">
+          {/* Icon + label */}
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+              <Key size={20} className="text-primary" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Today&apos;s Check-In Code</p>
+              <p className="text-xs text-slate-400 mt-0.5">Share this with your team every morning</p>
+            </div>
+          </div>
+
+          {/* The code */}
+          <div className="flex items-center gap-3">
+            <span className="text-4xl font-mono font-extrabold tracking-[0.25em] text-primary select-all">
+              {checkInCode ?? "—"}
+            </span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            {checkInCode && (
+              <button
+                onClick={handleCopyCode}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+              >
+                <Copy size={13} />
+                {codeCopied ? "Copied!" : "Copy Code"}
+              </button>
+            )}
+            <button
+              onClick={handleGenerateCode}
+              disabled={codeGenerating}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+            >
+              <RotateCcw size={13} className={codeGenerating ? "animate-spin" : ""} />
+              {checkInCode ? "Regenerate" : "Generate Code"}
+            </button>
+            <Link href="/admin/checkin" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              View Attendance <ChevronRight size={13} />
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

@@ -321,7 +321,7 @@ export const updateCheckInSettings = async (req: AuthRequest, res: Response): Pr
         ...(checkOutExpected      !== undefined && { checkOutExpected:      String(checkOutExpected)       }),
         ...(checkInWindowEnd      !== undefined && { checkInWindowEnd:      String(checkInWindowEnd)       }),
         ...(weeklyEmailEnabled    !== undefined && { weeklyEmailEnabled:    Boolean(weeklyEmailEnabled)    }),
-      } as any,
+      },
     });
 
     audit(req, 'CHECKIN_SETTINGS_UPDATED', 'SETTINGS', 'global', { checkInEnabled, checkInDeadline, checkInBufferMinutes });
