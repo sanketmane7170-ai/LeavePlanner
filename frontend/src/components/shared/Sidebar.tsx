@@ -20,6 +20,13 @@ import {
   Megaphone,
   SlidersHorizontal,
   ClipboardCheck,
+  CalendarClock,
+  Sun,
+  TrendingUp,
+  Sparkles,
+  Upload,
+  UserCheck,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +39,15 @@ interface NavItem {
 
 const adminNav: NavItem[] = [
   { href: "/admin/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
-  { href: "/admin/employees",     label: "Employees",     icon: Users           },
+  {
+    href: "/admin/employees",
+    label: "Employees",
+    icon: Users,
+    children: [
+      { href: "/admin/employees",                label: "All Employees"    },
+      { href: "/admin/employees/notice-period",  label: "Notice Period"    },
+    ],
+  },
   { href: "/admin/team-calendar", label: "Team Calendar", icon: CalendarDays    },
   {
     href: "/admin/policy-manager",
@@ -43,16 +58,27 @@ const adminNav: NavItem[] = [
       { href: "/admin/wfh-policy",     label: "WFH Policy"   },
     ]
   },
-  { 
+  {
     href: "/admin/leave-requests",
     label: "Requests",
     icon: CalendarDays,
     children: [
-      { href: "/admin/leave-requests/leave", label: "Leave Requests" },
-      { href: "/admin/leave-requests/wfh", label: "WFH Requests" },
+      { href: "/admin/leave-requests/leave",  label: "Leave Requests" },
+      { href: "/admin/leave-requests/wfh",    label: "WFH Requests"   },
+      { href: "/admin/leave-requests/import", label: "Bulk Import"    },
     ]
   },
+  { href: "/admin/reports", label: "Reports & Analytics", icon: TrendingUp },
   { href: "/admin/allowance-manager", label: "Allowance Manager", icon: SlidersHorizontal },
+  {
+    href: "/admin/checkin",
+    label: "Live Attendance",
+    icon: UserCheck,
+    children: [
+      { href: "/admin/checkin",          label: "Today's Attendance" },
+      { href: "/admin/checkin/settings", label: "Check-In Settings"  },
+    ],
+  },
   {
     href: "/admin/attendance",
     label: "Attendance",
@@ -83,13 +109,17 @@ const adminNav: NavItem[] = [
 ];
 
 const employeeNav: NavItem[] = [
-  { href: "/employee/dashboard",  label: "Dashboard",  icon: LayoutDashboard },
-  { href: "/employee/apply-leave",label: "Apply Leave",icon: PlusSquare      },
-  { href: "/employee/apply-wfh",  label: "Apply WFH",  icon: Home            },
-  { href: "/employee/my-leaves",  label: "My Leaves",  icon: ClipboardList   },
-  { href: "/employee/my-policies",label: "My Policies",icon: FileText        },
-  { href: "/employee/reports",    label: "My Reports", icon: BarChart2       },
-  { href: "/employee/profile",    label: "Profile",    icon: UserCircle      },
+  { href: "/employee/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
+  { href: "/employee/apply-leave", label: "Apply Leave", icon: PlusSquare      },
+  { href: "/employee/apply-wfh",   label: "Apply WFH",   icon: Home            },
+  { href: "/employee/my-leaves",   label: "My Leaves",   icon: ClipboardList   },
+  { href: "/employee/holidays",    label: "Holidays",    icon: Sun             },
+  { href: "/employee/my-schedule", label: "My Schedule", icon: CalendarClock   },
+  { href: "/employee/my-policies", label: "My Policies", icon: FileText        },
+  { href: "/employee/reports",     label: "My Reports",  icon: BarChart2       },
+  { href: "/employee/onboarding",       label: "Onboarding",     icon: Sparkles    },
+  { href: "/employee/checkin-history", label: "My Attendance",  icon: History     },
+  { href: "/employee/profile",         label: "Profile",        icon: UserCircle  },
 ];
 
 interface SidebarProps {

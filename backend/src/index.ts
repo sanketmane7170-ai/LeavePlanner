@@ -29,6 +29,9 @@ import adminSupportRoutes from './routes/adminSupport';
 import announcementRoutes from './routes/announcements';
 import attendanceRoutes from './routes/attendance';
 import systemLogsRoutes from './routes/systemLogs';
+import analyticsRoutes from './routes/analytics';
+import adminCheckinRoutes   from './routes/adminCheckin';
+import employeeCheckinRoutes from './routes/employeeCheckin';
 import { startAbsentCron } from './services/absentCron';
 import { startBackupCron } from './services/backupCron';
 import { startMonthlyCron } from './services/monthlyCron';
@@ -40,6 +43,8 @@ import { startYearEndWarnCron }   from './services/yearEndWarnCron';
 import { startHolidayReminderCron } from './services/holidayReminderCron';
 import { startWfhReminderCron }   from './services/wfhReminderCron';
 import { startMaintenanceCron }   from './services/maintenanceCron';
+import { startCheckInCrons }             from './services/checkinCron';
+import { startWeeklyAttendanceEmailCron } from './services/weeklyAttendanceEmailCron';
 import { seedEmailTemplates } from './services/emailTemplateSeed';
 
 const app = express();
@@ -123,6 +128,9 @@ app.use('/api/admin/support',    adminSupportRoutes);
 app.use('/api/admin/announcements', announcementRoutes);
 app.use('/api/admin/attendance',   attendanceRoutes);
 app.use('/api/admin/system-logs',  systemLogsRoutes);
+app.use('/api/admin/reports',      analyticsRoutes);
+app.use('/api/admin/checkin',      adminCheckinRoutes);
+app.use('/api/employee/checkin',   employeeCheckinRoutes);
 app.use('/api/support',          supportRoutes);
 app.use('/api/employee/portal',  employeePortalRoutes);
 app.use('/api/notifications',    notificationRoutes);
@@ -159,6 +167,8 @@ const server = app.listen(PORT, () => {
   startHolidayReminderCron();
   startWfhReminderCron();
   startMaintenanceCron();
+  startCheckInCrons();
+  startWeeklyAttendanceEmailCron();
   seedEmailTemplates().catch((e) => logger.error('[emailTemplateSeed]', e));
 });
 

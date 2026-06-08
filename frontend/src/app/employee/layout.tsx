@@ -24,9 +24,9 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
   const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    api
-      .get("/auth/me")
-      .then((res) => {
+    (async () => {
+      try {
+        const res = await api.get("/auth/me");
         const u: AuthUser = res.data.user;
         if (u.role !== "EMPLOYEE") {
           router.replace("/admin/dashboard");
@@ -36,9 +36,27 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
           router.replace("/employee/change-password");
           return;
         }
+        // After first login is cleared, show onboarding if not yet completed
+        if (!u.isFirstLogin && pathname !== "/employee/onboarding" && pathname !== "/employee/change-password") {
+          try {
+            const ob = await api.get("/employee/portal/onboarding");
+            if (!(ob.data as any)?.steps?.onboardingCompleted) {
+              const flagKey = `onboarding_redirected_${u.id}`;
+              if (!sessionStorage.getItem(flagKey)) {
+                sessionStorage.setItem(flagKey, "1");
+                router.replace("/employee/onboarding");
+                return;
+              }
+            }
+          } catch {
+            // ignore onboarding check errors — never block login
+          }
+        }
         setUser(u);
-      })
-      .catch(() => router.replace("/login"));
+      } catch {
+        router.replace("/login");
+      }
+    })();
   }, [router, pathname]);
 
   if (!user) {

@@ -103,6 +103,7 @@ model Employee {
   absentRecords      AbsentRecord[]
   announcementDismissals  AnnouncementDismissal[]
   attendanceCorrections   AttendanceCorrection[]
+  checkInRecords          CheckInRecord[]
   canViewTeamCalendar  Boolean            @default(false)
 
   // Notice period
@@ -112,6 +113,9 @@ model Employee {
   noticePeriodType   String?    // RESIGNED | TERMINATED | MUTUAL
   earlyReleaseDate   DateTime?
   allowLeaveOverride Boolean    @default(false)
+
+  // Onboarding
+  onboardingCompleted Boolean  @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -329,6 +333,17 @@ model OrgSettings {
   timezone                 String   @default("Asia/Kolkata")
   monthlyLeaveLimitEnabled Boolean  @default(false)
   monthlyLeaveLimit        Float?
+
+  // Check-in / Check-out settings
+  checkInEnabled           Boolean  @default(false)
+  checkInCodeTime          String   @default("09:00") // HH:MM when daily code is generated
+  checkInStartTime         String   @default("07:00") // earliest allowed check-in
+  checkInDeadline          String   @default("10:30") // after this = late
+  checkInBufferMinutes     Int      @default(0)        // grace buffer: late marked only after deadline + buffer
+  checkOutExpected         String   @default("18:00") // standard checkout time
+  checkInWindowEnd         String   @default("13:00") // after this = can't check in
+  weeklyEmailEnabled       Boolean  @default(false)   // send weekly attendance summary to employees
+
   updatedAt                DateTime @updatedAt
 }
 
@@ -479,4 +494,66 @@ model AnnouncementDismissal {
   dismissedAt    DateTime     @default(now())
 
   @@unique([announcementId, employeeId])
+}
+
+// ── Check-In / Check-Out Module ───────────────────────────────────────────────
+
+enum CheckInStatus {
+  NOT_CHECKED_IN
+  CHECKED_IN
+  CHECKED_OUT
+  ABSENT
+  ON_LEAVE
+  ON_WFH
+}
+
+model DailyCheckInCode {
+  id        String   @id @default(cuid())
+  code      String
+  date      String   // YYYY-MM-DD
+  expiresAt DateTime
+  createdBy String?  // admin userId (null = cron-generated)
+  createdAt DateTime @default(now())
+
+  @@unique([date])
+  @@index([date])
+}
+
+model CheckInRecord {
+  id              String        @id @default(cuid())
+  employeeId      String
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            String        // YYYY-MM-DD — one record per employee per day
+  checkInTime     DateTime?
+  checkOutTime    DateTime?
+
+  // Location at check-in
+  checkInLat      Float?
+  checkInLng      Float?
+  checkInAddress  String?
+
+  // Location at check-out
+  checkOutLat     Float?
+  checkOutLng     Float?
+  checkOutAddress String?
+
+  checkInIp       String?
+  checkOutIp      String?
+
+  isLate          Boolean       @default(false)
+  lateMinutes     Int?          // minutes past deadline
+  earlyCheckout   Boolean       @default(false)
+  earlyMinutes    Int?          // minutes before expected checkout
+  workingHours    Float?        // calculated on checkout
+  status          CheckInStatus @default(NOT_CHECKED_IN)
+  adminOverride   Boolean       @default(false)
+  adminNote       String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([employeeId])
+  @@index([status])
 }

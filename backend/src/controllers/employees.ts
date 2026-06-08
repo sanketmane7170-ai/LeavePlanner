@@ -884,3 +884,109 @@ export const deleteEmployee = async (req: AuthRequest, res: Response): Promise<a
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+// ── Notice Period Management ──────────────────────────────────────────────────
+
+export const getEmployeesOnNotice = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const { search, page = '1', limit = '50', includeAll } = req.query as Record<string, string>;
+    const pageNum  = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, parseInt(limit, 10));
+
+    const where: Record<string, any> = {};
+    if (includeAll !== 'true') where['isOnNoticePeriod'] = true;
+    else where['OR'] = [{ isOnNoticePeriod: true }, { noticePeriodEnd: { gte: new Date(Date.now() - 30 * 86400000) } }];
+
+    if (search) {
+      where['AND'] = [
+        {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { employeeId: { contains: search, mode: 'insensitive' } },
+            { department: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+
+    const [employees, total] = await Promise.all([
+      prisma.employee.findMany({
+        where,
+        include: {
+          user: { select: { email: true } },
+          reportingManager: { select: { id: true, fullName: true, employeeId: true } },
+        },
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+        orderBy: { noticePeriodStart: 'asc' },
+      }),
+      prisma.employee.count({ where }),
+    ]);
+
+    return res.json({ data: employees, total, page: pageNum, limit: limitNum });
+  } catch (error) {
+    logger.error('getEmployeesOnNotice error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const setNoticePeriod = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id = String(req.params['id']);
+    const { noticePeriodStart, noticePeriodEnd, noticePeriodType, earlyReleaseDate, allowLeaveOverride } = req.body as {
+      noticePeriodStart?: string;
+      noticePeriodEnd?: string;
+      noticePeriodType?: string;
+      earlyReleaseDate?: string | null;
+      allowLeaveOverride?: boolean;
+    };
+
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    const updated = await prisma.employee.update({
+      where: { id },
+      data: {
+        isOnNoticePeriod: true,
+        ...(noticePeriodStart  && { noticePeriodStart:  new Date(noticePeriodStart) }),
+        ...(noticePeriodEnd    && { noticePeriodEnd:    new Date(noticePeriodEnd) }),
+        ...(noticePeriodType !== undefined && { noticePeriodType }),
+        ...(earlyReleaseDate  !== undefined && { earlyReleaseDate: earlyReleaseDate ? new Date(earlyReleaseDate) : null }),
+        ...(allowLeaveOverride !== undefined && { allowLeaveOverride: Boolean(allowLeaveOverride) }),
+      },
+    });
+
+    audit(req, 'NOTICE_PERIOD_SET', 'EMPLOYEE', id, { employeeName: employee.fullName, noticePeriodType, noticePeriodEnd });
+    return res.json({ message: 'Notice period updated', employee: updated });
+  } catch (error) {
+    logger.error('setNoticePeriod error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const clearNoticePeriod = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id = String(req.params['id']);
+
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    await prisma.employee.update({
+      where: { id },
+      data: {
+        isOnNoticePeriod:  false,
+        noticePeriodStart: null,
+        noticePeriodEnd:   null,
+        noticePeriodType:  null,
+        earlyReleaseDate:  null,
+        allowLeaveOverride: false,
+      },
+    });
+
+    audit(req, 'NOTICE_PERIOD_CLEARED', 'EMPLOYEE', id, { employeeName: employee.fullName });
+    return res.json({ message: 'Notice period cleared' });
+  } catch (error) {
+    logger.error('clearNoticePeriod error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};

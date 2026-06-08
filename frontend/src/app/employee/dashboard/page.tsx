@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
   CalendarDays, Home, Plus, ChevronLeft, ChevronRight,
   Calendar, Star, Users, Megaphone, X, Sparkles, Cake,
+  LogIn, LogOut, MapPin, Loader2, Key,
 } from "lucide-react";
 import api from "@/lib/api";
 import { LEAVE_TYPE_LABELS, leaveStatusVariant, formatDate } from "@/lib/utils";
 import type { LeaveBalance, Announcement } from "@/types";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { WeaveSpinner } from "@/components/ui/weave-spinner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 
 
@@ -231,10 +240,172 @@ function MiniCalendar({
   );
 }
 
+// ── CheckIn status types ──────────────────────────────────────────────────────
+interface CheckInStatus {
+  status: string;
+  record: {
+    checkInTime: string | null;
+    checkOutTime: string | null;
+    isLate: boolean;
+    lateMinutes: number | null;
+    workingHours: number | null;
+  } | null;
+  settings: {
+    checkInEnabled: boolean;
+    checkInDeadline: string;
+    checkOutExpected: string;
+  };
+}
+
+// ── CheckIn modal component ───────────────────────────────────────────────────
+function CheckInModal({
+  open, onClose, mode, onSuccess,
+}: {
+  open: boolean; onClose: () => void; mode: "in" | "out"; onSuccess: () => void;
+}) {
+  const [code, setCode]         = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [location, setLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setCode(""); setLocation(null);
+      setTimeout(() => codeRef.current?.focus(), 100);
+    }
+  }, [open]);
+
+  const getLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
+          const d = await r.json();
+          address = d.display_name?.split(",").slice(0, 3).join(", ") ?? address;
+        } catch { /* ignore */ }
+        setLocation({ lat, lng, address });
+        setLocating(false);
+      },
+      () => setLocating(false),
+      { timeout: 8000 }
+    );
+  };
+
+  const handleSubmit = async () => {
+    if (mode === "in" && !code.trim()) {
+      toast.error("Please enter the check-in code");
+      return;
+    }
+    setLoading(true);
+    try {
+      if (mode === "in") {
+        await api.post("/employee/checkin/in", {
+          code: code.trim().toUpperCase(),
+          ...(location && { lat: location.lat, lng: location.lng, address: location.address }),
+        });
+        toast.success("Checked in successfully!");
+      } else {
+        await api.post("/employee/checkin/out", {
+          ...(location && { lat: location.lat, lng: location.lng, address: location.address }),
+        });
+        toast.success("Checked out successfully!");
+      }
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Operation failed";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {mode === "in" ? <LogIn size={18} className="text-green-600" /> : <LogOut size={18} className="text-blue-600" />}
+            {mode === "in" ? "Check In" : "Check Out"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {mode === "in" && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Key size={13} /> Enter Today&apos;s Code
+              </label>
+              <Input
+                ref={codeRef}
+                placeholder="e.g. AB3X7Z"
+                value={code}
+                onChange={e => setCode(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key === "Enter" && handleSubmit()}
+                className="font-mono text-xl tracking-[0.2em] text-center uppercase"
+                maxLength={8}
+              />
+              <p className="text-xs text-slate-400">Ask your admin for today&apos;s code</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <MapPin size={13} /> Location
+                <span className="text-slate-400 font-normal">(optional)</span>
+              </label>
+              {!location && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={getLocation} disabled={locating}>
+                  {locating ? <Loader2 size={12} className="animate-spin mr-1" /> : <MapPin size={12} className="mr-1" />}
+                  {locating ? "Locating…" : "Get Location"}
+                </Button>
+              )}
+            </div>
+            {location && (
+              <div className="flex items-start gap-2 p-2.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                <MapPin size={13} className="text-green-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-green-700 dark:text-green-400 leading-snug">{location.address}</p>
+              </div>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading || (mode === "in" && !code.trim())}
+            className={mode === "in" ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"}
+          >
+            {loading && <Loader2 size={13} className="animate-spin mr-1.5" />}
+            {mode === "in" ? "Check In" : "Check Out"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EmployeeDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Check-in state
+  const [checkInStatus, setCheckInStatus] = useState<CheckInStatus | null>(null);
+  const [modalMode, setModalMode]         = useState<"in" | "out">("in");
+  const [modalOpen, setModalOpen]         = useState(false);
+
+  const fetchCheckInStatus = () => {
+    api.get("/employee/checkin/status")
+      .then(r => setCheckInStatus(r.data))
+      .catch(() => {});
+  };
 
   useEffect(() => {
     api
@@ -242,6 +413,7 @@ export default function EmployeeDashboard() {
       .then((r) => setData(r.data))
       .catch(() => toast.error("Failed to load dashboard"))
       .finally(() => setLoading(false));
+    fetchCheckInStatus();
   }, []);
 
   const handleDismissAnnouncement = async (id: string) => {
@@ -426,6 +598,63 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
+      {/* Check In / Check Out */}
+      {checkInStatus?.settings?.checkInEnabled && (
+        <div className="flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Today&apos;s Attendance</p>
+            <div className="flex flex-wrap gap-4 mt-1 text-xs text-slate-500">
+              {checkInStatus.record?.checkInTime && (
+                <span className="flex items-center gap-1">
+                  <LogIn size={11} className="text-green-500" />
+                  In: <strong className="text-slate-700 dark:text-slate-300">{new Date(checkInStatus.record.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</strong>
+                  {checkInStatus.record.isLate && (
+                    <span className="text-amber-600 ml-1">+{checkInStatus.record.lateMinutes}m late</span>
+                  )}
+                </span>
+              )}
+              {checkInStatus.record?.checkOutTime && (
+                <span className="flex items-center gap-1">
+                  <LogOut size={11} className="text-blue-500" />
+                  Out: <strong className="text-slate-700 dark:text-slate-300">{new Date(checkInStatus.record.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</strong>
+                  {checkInStatus.record.workingHours && (
+                    <span className="text-slate-400 ml-1">{checkInStatus.record.workingHours}h worked</span>
+                  )}
+                </span>
+              )}
+              {checkInStatus.status === "NOT_CHECKED_IN" && (
+                <span className="text-slate-400">Not checked in yet</span>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {(checkInStatus.status === "NOT_CHECKED_IN") && (
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => { setModalMode("in"); setModalOpen(true); }}
+              >
+                <LogIn size={14} className="mr-1.5" /> Check In
+              </Button>
+            )}
+            {checkInStatus.status === "CHECKED_IN" && (
+              <Button
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => { setModalMode("out"); setModalOpen(true); }}
+              >
+                <LogOut size={14} className="mr-1.5" /> Check Out
+              </Button>
+            )}
+            {checkInStatus.status === "CHECKED_OUT" && (
+              <span className="text-xs font-medium text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-full">
+                Done for today
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Quick apply */}
       <div className="flex flex-wrap gap-3">
         {employee.leavePolicy && (
@@ -451,6 +680,14 @@ export default function EmployeeDashboard() {
           </Button>
         </Link>
       </div>
+
+      {/* CheckIn Modal */}
+      <CheckInModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        mode={modalMode}
+        onSuccess={fetchCheckInStatus}
+      />
 
       {/* Three-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

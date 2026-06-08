@@ -483,3 +483,94 @@ export const getMonthlyCalendar = async (req: AuthRequest, res: Response): Promi
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+// ── GET /api/employee/portal/holidays ────────────────────────────────────────
+export const getMyHolidays = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const year = parseInt((req.query.year as string) || '') || new Date().getFullYear();
+    const holidays = await prisma.publicHoliday.findMany({
+      where: { year },
+      orderBy: { date: 'asc' },
+      select: { id: true, name: true, date: true, year: true },
+    });
+    return res.json(holidays);
+  } catch (error) {
+    logger.error('getMyHolidays error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── GET /api/employee/portal/my-schedule ─────────────────────────────────────
+export const getMySchedule = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const userId   = req.user!.userId;
+    const employee = await prisma.employee.findUnique({
+      where: { userId },
+      include: { workingSchedule: true },
+    });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    return res.json({
+      employee: {
+        id: employee.id,
+        fullName: employee.fullName,
+        employeeId: employee.employeeId,
+        department: employee.department,
+        designation: employee.designation,
+        dateOfJoining: employee.dateOfJoining,
+      },
+      schedule: employee.workingSchedule,
+    });
+  } catch (error) {
+    logger.error('getMySchedule error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── GET /api/employee/portal/onboarding ──────────────────────────────────────
+export const getOnboardingStatus = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const userId   = req.user!.userId;
+    const employee = await prisma.employee.findUnique({
+      where: { userId },
+      include: {
+        leavePolicy:    { select: { id: true, name: true } },
+        wfhPolicy:      { select: { id: true, name: true } },
+        workingSchedule: true,
+      },
+    });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    const steps = {
+      profileComplete:        !!(employee.mobile && employee.personalEmail),
+      leavePolicyAssigned:    !!employee.leavePolicy,
+      wfhPolicyAssigned:      !!employee.wfhPolicy,
+      scheduleConfigured:     !!employee.workingSchedule,
+      onboardingCompleted:    (employee as any).onboardingCompleted || false,
+    };
+
+    return res.json({ employee, steps });
+  } catch (error) {
+    logger.error('getOnboardingStatus error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// ── POST /api/employee/portal/onboarding/complete ────────────────────────────
+export const completeOnboarding = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const userId   = req.user!.userId;
+    const employee = await prisma.employee.findUnique({ where: { userId } });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    await (prisma.employee as any).update({
+      where: { id: employee.id },
+      data:  { onboardingCompleted: true },
+    });
+
+    return res.json({ message: 'Onboarding completed' });
+  } catch (error) {
+    logger.error('completeOnboarding error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};

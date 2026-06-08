@@ -640,3 +640,53 @@ export const bulkApproveWfh = async (req: AuthRequest, res: Response): Promise<a
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+// ── GET /api/employee/wfh/monthly-breakdown ──────────────────────────────────
+export const getWfhMonthlyBreakdown = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const userId = req.user!.userId;
+    const year   = parseInt((req.query.year as string) || '') || new Date().getFullYear();
+
+    const employee = await prisma.employee.findUnique({
+      where: { userId },
+      include: { wfhPolicy: { select: { id: true, daysAllowed: true } } },
+    });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    const wfhApps = await prisma.wfhApplication.findMany({
+      where: {
+        employeeId: employee.id,
+        status: { in: ['APPROVED', 'PENDING'] },
+        date: { gte: new Date(`${year}-01-01`), lte: new Date(`${year}-12-31`) },
+      },
+      select: { date: true, totalDays: true, isHalfDay: true, status: true },
+    });
+
+    const months: Record<number, { approved: number; pending: number }> = {};
+    for (let m = 1; m <= 12; m++) months[m] = { approved: 0, pending: 0 };
+
+    for (const w of wfhApps) {
+      const m = new Date(w.date).getMonth() + 1;
+      const days = w.totalDays ?? (w.isHalfDay ? 0.5 : 1);
+      if (w.status === 'APPROVED') months[m]!.approved += days;
+      else months[m]!.pending += days;
+    }
+
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthly = Object.entries(months).map(([m, v]) => ({
+      month: MONTH_NAMES[parseInt(m) - 1],
+      monthNum: parseInt(m),
+      approved: Math.round(v.approved * 10) / 10,
+      pending:  Math.round(v.pending  * 10) / 10,
+    }));
+
+    return res.json({
+      year,
+      daysAllowed: employee.wfhPolicy?.daysAllowed ?? null,
+      monthly,
+    });
+  } catch (error) {
+    logger.error('getWfhMonthlyBreakdown error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
