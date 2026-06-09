@@ -14,8 +14,7 @@ import { WeaveSpinner } from "@/components/ui/weave-spinner";
 import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-// U = Unpaid leave (fully unpaid approved leave, no salary impact)
-type MusterStatus = "P" | "A" | "L" | "U" | "HD" | "WFH" | "WO" | "H" | "-" | "·" | "SD";
+type MusterStatus = "P" | "A" | "L" | "U" | "HD" | "WFH" | "WO" | "H" | "-" | "·" | "SD" | "SC" | "NC";
 
 interface CorrectionMeta {
   id: string;
@@ -32,7 +31,9 @@ interface MusterEmployee {
   designation: string | null;
   attendance: Record<number, MusterStatus>;
   correctionMeta: Record<number, CorrectionMeta>;
-  swapDayMeta: Record<number, { compensationDate: string; deadline: string }>;
+  swapDayMeta: Record<number, { compensationDate: string | null; deadline: string | null }>;
+  swapCompMeta: Record<number, { absentDate: string }>;
+  lateMeta: Record<number, { minutes: number; source: string }>;
   summary: {
     present: number; absent: number; leave: number; unpaidLeave: number;
     halfDay: number; wfh: number; weekOff: number;
@@ -51,6 +52,7 @@ interface MusterData {
   limit: number;
   totalPages: number;
   totals: { present: number; absent: number; leave: number; unpaidLeave: number; wfh: number; halfDay: number };
+  attendanceMode: "AUTO_PRESENT" | "FROM_CHECKIN";
 }
 
 interface TodaySummary {
@@ -78,6 +80,8 @@ const S: Record<MusterStatus, { label: string; cell: string; badge: string }> = 
   WO:  { label: "Week Off",     cell: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",                  badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700" },
   H:   { label: "Holiday",      cell: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700",         badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-700" },
   SD:  { label: "Swap Day",      cell: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700",         badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-700" },
+  SC:  { label: "Swap Comp",    cell: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300 border border-teal-300 dark:border-teal-700",               badge: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400 border border-teal-200 dark:border-teal-700" },
+  NC:  { label: "No Check-In",  cell: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 border border-slate-400 dark:border-slate-500",            badge: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600" },
   "-": { label: "Pre-joining",  cell: "", badge: "" },
   "·": { label: "Upcoming",     cell: "", badge: "" },
 };
@@ -186,6 +190,12 @@ export default function MusterViewPage() {
   const [loading, setLoading]       = useState(true);
   const [exporting, setExporting]   = useState(false);
   const [detail, setDetail]         = useState<CellDetail | null>(null);
+
+  // Late mark state
+  const [lateMinutesInput, setLateMinutesInput] = useState("15");
+  const [lateNote, setLateNote]                 = useState("");
+  const [addingLate, setAddingLate]             = useState(false);
+  const [removingLate, setRemovingLate]         = useState(false);
 
   const limit = 20;
 
@@ -366,11 +376,14 @@ export default function MusterViewPage() {
 
       {/* ── Legend ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {(["P","A","SD","L","U","HD","WFH","WO","H"] as MusterStatus[]).map((s) => (
+        {(["P","A","SD","SC","L","U","HD","WFH","WO","H", ...(data?.attendanceMode === "FROM_CHECKIN" ? ["NC"] : [])] as MusterStatus[]).map((s) => (
           <span key={s} className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold", S[s].badge)}>
             {s} {S[s].label}
           </span>
         ))}
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-700">
+          L Late mark
+        </span>
         <span className="text-[11px] text-slate-400 ml-1">· = upcoming day</span>
       </div>
 
@@ -472,11 +485,22 @@ export default function MusterViewPage() {
                           );
                         }
 
+                        const lateInfo = emp.lateMeta?.[dayNum];
+                        const titleStr = emp.correctionMeta?.[dayNum]
+                          ? `Corrected (was ${emp.correctionMeta[dayNum].originalStatus})${lateInfo ? ` · Late ${lateInfo.minutes}m` : ""}`
+                          : status === "SD" && emp.swapDayMeta?.[dayNum]
+                            ? `Swap Day — Comp: ${emp.swapDayMeta[dayNum].compensationDate ?? "TBD"} | Deadline: ${emp.swapDayMeta[dayNum].deadline ?? "TBD"}${lateInfo ? ` · Late ${lateInfo.minutes}m` : ""}`
+                            : status === "SC" && emp.swapCompMeta?.[dayNum]
+                              ? `Swap Compensation Day for absent on ${emp.swapCompMeta[dayNum].absentDate}${lateInfo ? ` · Late ${lateInfo.minutes}m` : ""}`
+                              : `${cfg.label}${lateInfo ? ` · Late ${lateInfo.minutes}m` : ""}`;
+
                         return (
                           <td key={dayNum} className={cn("border-b border-slate-100 dark:border-slate-800/60 p-0.5 text-center", holiday ? "bg-purple-50/60 dark:bg-purple-900/10" : isWeekend ? "bg-slate-50/80 dark:bg-slate-800/30" : "")}>
                             <button
                               onClick={() => {
                                 const iso = `${data.year}-${String(data.month).padStart(2,"0")}-${String(dayNum).padStart(2,"0")}`;
+                                setLateMinutesInput("15");
+                                setLateNote("");
                                 setDetail({
                                   employee: emp,
                                   day: dayNum,
@@ -487,18 +511,13 @@ export default function MusterViewPage() {
                                   correction: emp.correctionMeta?.[dayNum],
                                 });
                               }}
-                              title={
-                                emp.correctionMeta?.[dayNum]
-                                  ? `Corrected (was ${emp.correctionMeta[dayNum].originalStatus})`
-                                  : status === "SD" && emp.swapDayMeta?.[dayNum]
-                                    ? `Swap Day — Comp: ${emp.swapDayMeta[dayNum].compensationDate} | Deadline: ${emp.swapDayMeta[dayNum].deadline}`
-                                    : cfg.label
-                              }
+                              title={titleStr}
                               className={cn(
                                 "relative flex items-center justify-center w-7 h-6 rounded text-[10px] font-bold transition-transform hover:scale-110",
                                 cfg.cell,
                                 emp.correctionMeta?.[dayNum] && "ring-2 ring-violet-400 dark:ring-violet-500",
-                                status === "SD" && !emp.correctionMeta?.[dayNum] && "ring-1 ring-amber-400 dark:ring-amber-500"
+                                status === "SD" && !emp.correctionMeta?.[dayNum] && "ring-1 ring-amber-400 dark:ring-amber-500",
+                                status === "SC" && "ring-1 ring-teal-400 dark:ring-teal-500",
                               )}
                             >
                               {status}
@@ -507,6 +526,13 @@ export default function MusterViewPage() {
                               )}
                               {status === "SD" && !emp.correctionMeta?.[dayNum] && (
                                 <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 border border-white dark:border-slate-900" />
+                              )}
+                              {status === "SC" && (
+                                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-teal-500 border border-white dark:border-slate-900" />
+                              )}
+                              {/* Red L badge for late mark — bottom-left corner */}
+                              {lateInfo && (
+                                <span className="absolute -bottom-0.5 -left-0.5 h-2 w-2 rounded-full bg-red-500 border border-white dark:border-slate-900 flex items-center justify-center text-[5px] text-white font-black">L</span>
                               )}
                             </button>
                           </td>
@@ -579,6 +605,40 @@ export default function MusterViewPage() {
       {detail && (
         <AttendanceDetailModal
           detail={detail}
+          lateInfo={detail.employee.lateMeta?.[detail.day]}
+          lateMinutesInput={lateMinutesInput}
+          lateNote={lateNote}
+          addingLate={addingLate}
+          removingLate={removingLate}
+          onLateMinutesChange={setLateMinutesInput}
+          onLateNoteChange={setLateNote}
+          onAddLate={async () => {
+            setAddingLate(true);
+            try {
+              await api.post("/admin/late-records", {
+                employeeId: detail.employee.id,
+                date: detail.isoDate,
+                lateMinutes: parseInt(lateMinutesInput, 10) || 15,
+                note: lateNote.trim() || null,
+              });
+              toast.success(`Late mark added for ${detail.employee.fullName}`);
+              setDetail(null);
+              fetchData(applied.month, applied.year, applied.search, applied.dept, page);
+            } catch (e: any) {
+              toast.error(e?.response?.data?.message ?? "Failed to add late mark");
+            } finally { setAddingLate(false); }
+          }}
+          onRemoveLate={async () => {
+            setRemovingLate(true);
+            try {
+              await api.delete("/admin/late-records/by-date", { data: { employeeId: detail.employee.id, date: detail.isoDate } });
+              toast.success("Late mark removed");
+              setDetail(null);
+              fetchData(applied.month, applied.year, applied.search, applied.dept, page);
+            } catch (e: any) {
+              toast.error(e?.response?.data?.message ?? "Failed to remove late mark");
+            } finally { setRemovingLate(false); }
+          }}
           onClose={() => setDetail(null)}
           onSaved={() => {
             setDetail(null);
@@ -595,10 +655,28 @@ const EDITABLE_STATUSES: MusterStatus[] = ["P", "A", "L", "U", "HD", "WFH"];
 
 function AttendanceDetailModal({
   detail,
+  lateInfo,
+  lateMinutesInput,
+  lateNote,
+  addingLate,
+  removingLate,
+  onLateMinutesChange,
+  onLateNoteChange,
+  onAddLate,
+  onRemoveLate,
   onClose,
   onSaved,
 }: {
   detail: CellDetail;
+  lateInfo?: { minutes: number; source: string };
+  lateMinutesInput: string;
+  lateNote: string;
+  addingLate: boolean;
+  removingLate: boolean;
+  onLateMinutesChange: (v: string) => void;
+  onLateNoteChange: (v: string) => void;
+  onAddLate: () => void;
+  onRemoveLate: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -702,7 +780,7 @@ function AttendanceDetailModal({
             )}
 
             {/* Month summary */}
-            <div className="grid grid-cols-4 gap-2 mb-5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+            <div className="grid grid-cols-4 gap-2 mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
               {[
                 { label: "P",      val: detail.employee.summary.present,     cls: "text-emerald-600 dark:text-emerald-400" },
                 { label: "A",      val: detail.employee.summary.absent,      cls: "text-red-600 dark:text-red-400" },
@@ -717,6 +795,67 @@ function AttendanceDetailModal({
                 </div>
               ))}
             </div>
+
+            {/* Late mark section */}
+            {isEditable && (
+              <div className="mb-4 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                  Late Mark
+                </p>
+                {lateInfo ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-red-600 dark:text-red-400">{lateInfo.minutes} min late</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {lateInfo.source === "AUTO" ? "Auto-detected from check-in" : "Manually marked by admin"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onRemoveLate}
+                      disabled={removingLate}
+                      className="text-xs text-red-500 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {removingLate ? <WeaveSpinner size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={480}
+                          value={lateMinutesInput}
+                          onChange={(e) => onLateMinutesChange(e.target.value)}
+                          className="w-16 text-sm border rounded-lg px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white text-center"
+                        />
+                        <span className="text-xs text-slate-500">min late</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onAddLate}
+                        disabled={addingLate || !lateMinutesInput || parseInt(lateMinutesInput, 10) < 1}
+                        className="text-xs text-red-600 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 font-medium"
+                      >
+                        {addingLate ? <WeaveSpinner size={11} className="animate-spin" /> : null}
+                        Mark Late
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Note (optional)"
+                      value={lateNote}
+                      onChange={(e) => onLateNoteChange(e.target.value)}
+                      className="w-full text-xs border rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-red-400/40"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 

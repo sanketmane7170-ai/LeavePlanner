@@ -26,6 +26,8 @@ interface DayRecord {
   status: DayStatus;
   leaveType?: string;
   holidayName?: string;
+  lateMinutes?: number;
+  lateSource?: string;
 }
 
 interface Summary {
@@ -376,9 +378,16 @@ export default function ReportsPage() {
                           </div>
                         )}
 
+                        {/* Late badge */}
+                        {record?.lateMinutes && (
+                          <div className="absolute bottom-1 right-1 bg-red-500 text-white text-[9px] font-bold px-1 py-0.5 rounded leading-none">
+                            L
+                          </div>
+                        )}
+
                         {/* Tooltip on hover */}
                         {tooltip?.date === dateStr && record && (
-                          <div className="absolute z-20 left-1/2 -translate-x-1/2 top-full mt-1 w-44 bg-slate-900 dark:bg-slate-700 text-white text-xs rounded-xl shadow-xl px-3 py-2 pointer-events-none">
+                          <div className="absolute z-20 left-1/2 -translate-x-1/2 top-full mt-1 w-48 bg-slate-900 dark:bg-slate-700 text-white text-xs rounded-xl shadow-xl px-3 py-2 pointer-events-none">
                             <p className="font-semibold mb-0.5">
                               {new Date(dateStr).toLocaleDateString("en-IN", {
                                 day: "numeric",
@@ -391,6 +400,12 @@ export default function ReportsPage() {
                             </p>
                             {record.holidayName && (
                               <p className="text-slate-300 mt-0.5">{record.holidayName}</p>
+                            )}
+                            {record.lateMinutes && (
+                              <p className="text-red-300 mt-0.5 font-medium">
+                                Late: {record.lateMinutes} min
+                                {record.lateSource === "AUTO" ? " (check-in)" : " (admin)"}
+                              </p>
                             )}
                           </div>
                         )}
@@ -412,6 +427,12 @@ export default function ReportsPage() {
                   <span className="text-slate-600 dark:text-slate-400">{cfg.label}</span>
                 </div>
               ))}
+            <div className="flex items-center gap-1.5 text-xs">
+              <div className="w-3.5 h-3.5 rounded bg-red-500 flex items-center justify-center">
+                <span className="text-white text-[8px] font-bold">L</span>
+              </div>
+              <span className="text-slate-600 dark:text-slate-400">Late</span>
+            </div>
           </div>
 
           {/* Info note */}

@@ -105,6 +105,7 @@ model Employee {
   attendanceCorrections   AttendanceCorrection[]
   checkInRecords          CheckInRecord[]
   swapDays                SwapDay[]
+  lateRecords             LateRecord[]
   canViewTeamCalendar  Boolean            @default(false)
 
   // Notice period
@@ -345,6 +346,11 @@ model OrgSettings {
   checkInWindowEnd         String   @default("13:00") // after this = can't check in
   weeklyEmailEnabled       Boolean  @default(false)   // send weekly attendance summary to employees
 
+  // Attendance presence mode
+  // AUTO_PRESENT: working days auto-show Present unless overridden
+  // FROM_CHECKIN: Present only if a CheckInRecord exists; else NC (No Check-In)
+  attendanceMode           String   @default("AUTO_PRESENT")
+
   updatedAt                DateTime @updatedAt
 }
 
@@ -563,6 +569,27 @@ model CheckInRecord {
   @@index([date])
   @@index([employeeId])
   @@index([status])
+}
+
+// ── Late Record ───────────────────────────────────────────────────────────────
+// Single source of truth for late marks — both auto-detected (from CheckIn) and manual (admin).
+// source: "AUTO" | "MANUAL"
+
+model LateRecord {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime // UTC midnight date only
+  lateMinutes Int      @default(0)
+  note        String?
+  source      String   @default("MANUAL") // AUTO | MANUAL
+  markedById  String?  // admin userId (null for AUTO)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
 }
 
 // ── Swap Day Module ───────────────────────────────────────────────────────────

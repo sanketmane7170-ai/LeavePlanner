@@ -226,6 +226,22 @@ export const adminOverrideCheckIn = async (req: AuthRequest, res: Response): Pro
       },
     });
 
+    // Sync LateRecord on admin override
+    const dateOnly = new Date(Date.UTC(
+      new Date(date).getUTCFullYear(),
+      new Date(date).getUTCMonth(),
+      new Date(date).getUTCDate(),
+    ));
+    if (isLate && lateMinutes) {
+      await prisma.lateRecord.upsert({
+        where:  { employeeId_date: { employeeId, date: dateOnly } },
+        update: { lateMinutes, source: 'AUTO' },
+        create: { employeeId, date: dateOnly, lateMinutes, source: 'AUTO', markedById: req.user!.userId },
+      }).catch(() => { /* non-fatal */ });
+    } else {
+      await prisma.lateRecord.deleteMany({ where: { employeeId, date: dateOnly, source: 'AUTO' } }).catch(() => { /* non-fatal */ });
+    }
+
     audit(req, 'CHECKIN_ADMIN_OVERRIDE', 'EMPLOYEE', employeeId, { date, checkInTime, checkOutTime, status, adminNote });
     return res.json({ message: 'Override saved', record });
   } catch (error) {
@@ -295,6 +311,7 @@ export const getCheckInSettings = async (_req: AuthRequest, res: Response): Prom
       checkOutExpected:     settings.checkOutExpected,
       checkInWindowEnd:     settings.checkInWindowEnd,
       weeklyEmailEnabled:   (settings as any).weeklyEmailEnabled ?? false,
+      attendanceMode:       (settings as any).attendanceMode ?? 'AUTO_PRESENT',
     });
   } catch (error) {
     logger.error('getCheckInSettings error:', error);
@@ -308,6 +325,7 @@ export const updateCheckInSettings = async (req: AuthRequest, res: Response): Pr
     const {
       checkInEnabled, checkInCodeTime, checkInStartTime, checkInDeadline,
       checkInBufferMinutes, checkOutExpected, checkInWindowEnd, weeklyEmailEnabled,
+      attendanceMode,
     } = req.body as Record<string, any>;
 
     const updated = await prisma.orgSettings.update({
@@ -321,6 +339,7 @@ export const updateCheckInSettings = async (req: AuthRequest, res: Response): Pr
         ...(checkOutExpected      !== undefined && { checkOutExpected:      String(checkOutExpected)       }),
         ...(checkInWindowEnd      !== undefined && { checkInWindowEnd:      String(checkInWindowEnd)       }),
         ...(weeklyEmailEnabled    !== undefined && { weeklyEmailEnabled:    Boolean(weeklyEmailEnabled)    }),
+        ...(attendanceMode        !== undefined && ['AUTO_PRESENT','FROM_CHECKIN'].includes(attendanceMode) && { attendanceMode: String(attendanceMode) }),
       },
     });
 
@@ -444,6 +463,20 @@ export const employeeCheckIn = async (req: AuthRequest, res: Response): Promise<
         updatedAt: now,
       },
     });
+
+    // Auto-upsert LateRecord so muster + calendar have a single source of truth
+    if (isLate && lateMinutes) {
+      const dateOnly = new Date(Date.UTC(
+        new Date(today).getUTCFullYear(),
+        new Date(today).getUTCMonth(),
+        new Date(today).getUTCDate(),
+      ));
+      await prisma.lateRecord.upsert({
+        where:  { employeeId_date: { employeeId: employee.id, date: dateOnly } },
+        update: { lateMinutes, source: 'AUTO' },
+        create: { employeeId: employee.id, date: dateOnly, lateMinutes, source: 'AUTO' },
+      }).catch(() => { /* non-fatal */ });
+    }
 
     return res.json({
       message:    isLate ? `Checked in (${lateMinutes} min late)` : 'Checked in successfully!',

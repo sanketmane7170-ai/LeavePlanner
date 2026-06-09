@@ -5,7 +5,7 @@ import api from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, Clock, Mail } from "lucide-react";
+import { Save, Clock, Mail, Users } from "lucide-react";
 
 interface Settings {
   checkInEnabled:       boolean;
@@ -16,6 +16,7 @@ interface Settings {
   checkOutExpected:     string;
   checkInWindowEnd:     string;
   weeklyEmailEnabled:   boolean;
+  attendanceMode:       "AUTO_PRESENT" | "FROM_CHECKIN";
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -39,6 +40,7 @@ export default function CheckInSettingsPage() {
     checkInEnabled: false, checkInCodeTime: "09:00", checkInStartTime: "07:00",
     checkInDeadline: "10:30", checkInBufferMinutes: 0,
     checkOutExpected: "18:00", checkInWindowEnd: "13:00", weeklyEmailEnabled: false,
+    attendanceMode: "AUTO_PRESENT",
   });
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
@@ -225,6 +227,60 @@ export default function CheckInSettingsPage() {
           </div>
           <Toggle checked={settings.weeklyEmailEnabled} onChange={v => set("weeklyEmailEnabled", v)} />
         </div>
+      </div>
+
+      {/* Attendance Mode */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <Users size={16} className="text-primary" />
+          <h2 className="font-semibold text-slate-900 dark:text-white">Attendance Marking Mode</h2>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Choose how employee presence is determined in the muster roll
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            {
+              value: "AUTO_PRESENT",
+              title: "Mark Auto Present",
+              desc: "All working days are automatically marked Present unless overridden by leave, WFH, or an absent record. Check-in is optional / informational only.",
+              icon: "✅",
+            },
+            {
+              value: "FROM_CHECKIN",
+              title: "Mark Based on Check-In",
+              desc: "Presence requires a check-in record. Working days with no check-in show as NC (No Check-In) and count as absent for salary. Recommended when check-in is mandatory.",
+              icon: "🔒",
+            },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => set("attendanceMode", opt.value)}
+              className={`text-left p-4 rounded-xl border-2 transition-all ${
+                settings.attendanceMode === opt.value
+                  ? "border-primary bg-primary/5 dark:bg-primary/10"
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-lg">{opt.icon}</span>
+                <span className={`text-sm font-semibold ${settings.attendanceMode === opt.value ? "text-primary" : "text-slate-800 dark:text-slate-200"}`}>
+                  {opt.title}
+                </span>
+                {settings.attendanceMode === opt.value && (
+                  <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/10 px-2 py-0.5 rounded-full">Active</span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{opt.desc}</p>
+            </button>
+          ))}
+        </div>
+        {settings.attendanceMode === "FROM_CHECKIN" && (
+          <p className="mt-3 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+            Make sure Check-In Module is enabled above, otherwise all employees will show NC every day.
+          </p>
+        )}
       </div>
 
       <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">

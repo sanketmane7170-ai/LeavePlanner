@@ -12,6 +12,8 @@ export interface DayRecord {
   leaveType?: string;
   isUnpaid?: boolean;
   holidayName?: string;
+  lateMinutes?: number;
+  lateSource?: string;
 }
 
 export interface MonthlyReportData {
@@ -80,7 +82,7 @@ export async function calculateEmployeeMonthReport(
       : new Date(monthStart);
   effectiveStart.setHours(0, 0, 0, 0);
 
-  const [holidays, approvedLeaves, absentRecords, approvedWfh] = await Promise.all([
+  const [holidays, approvedLeaves, absentRecords, approvedWfh, lateRecords] = await Promise.all([
     prisma.publicHoliday.findMany({
       where: { date: { gte: monthStart, lte: monthEnd } },
     }),
@@ -113,7 +115,13 @@ export async function calculateEmployeeMonthReport(
       },
       select: { id: true, date: true, toDate: true, isHalfDay: true, totalDays: true },
     }),
+    prisma.lateRecord.findMany({
+      where: { employeeId, date: { gte: monthStart, lte: monthEnd } },
+      select: { date: true, lateMinutes: true, source: true },
+    }),
   ]);
+
+  const lateMap = new Map(lateRecords.map((r) => [toYMD(r.date), { lateMinutes: r.lateMinutes, source: r.source }]));
 
   const holidayDates = holidays.map((h) => h.date);
   const holidayMap = new Map(holidays.map((h) => [toYMD(h.date), h.name]));
@@ -259,23 +267,31 @@ export async function calculateEmployeeMonthReport(
     const isLeave   = !!leaveInfo;
     const isAbsent  = absentDaySet.has(ds);
     const isWfh     = wfhDaySet.has(ds);
+    const lateInfo  = lateMap.get(ds);
 
+    let record: DayRecord;
     if (isHoliday) {
-      days.push({ date: ds, status: 'holiday', holidayName: holidayMap.get(ds) });
+      record = { date: ds, status: 'holiday', holidayName: holidayMap.get(ds) };
     } else if (!isWorking) {
-      days.push({ date: ds, status: 'weekend' });
+      record = { date: ds, status: 'weekend' };
     } else if (isFuture) {
-      days.push({ date: ds, status: 'upcoming' });
+      record = { date: ds, status: 'upcoming' };
     } else if (isLeave) {
-      days.push({ date: ds, status: 'leave', leaveType: leaveInfo.leaveType, isUnpaid: leaveInfo.isUnpaid });
+      record = { date: ds, status: 'leave', leaveType: leaveInfo.leaveType, isUnpaid: leaveInfo.isUnpaid };
     } else if (isAbsent) {
-      days.push({ date: ds, status: 'absent' });
+      record = { date: ds, status: 'absent' };
     } else if (isWfh) {
-      days.push({ date: ds, status: 'wfh' });
+      record = { date: ds, status: 'wfh' };
     } else {
-      days.push({ date: ds, status: 'present' });
+      record = { date: ds, status: 'present' };
     }
 
+    if (lateInfo && record.status !== 'weekend' && record.status !== 'holiday' && record.status !== 'upcoming') {
+      record.lateMinutes = lateInfo.lateMinutes;
+      record.lateSource  = lateInfo.source;
+    }
+
+    days.push(record);
     cur.setDate(cur.getDate() + 1);
   }
 

@@ -42,8 +42,11 @@ function isDayWorking(date: Date, workingDays: string[], saturdayRule: string): 
 }
 
 // Status codes used in the muster grid
-// U = Unpaid leave (fully unpaid approved leave)
-export type MusterStatus = 'P' | 'A' | 'L' | 'U' | 'HD' | 'WFH' | 'WO' | 'H' | '-' | '·' | 'SD';
+// U  = Unpaid leave (fully unpaid approved leave)
+// SD = Swap Day absent (employee missed work, compensation pending)
+// SC = Swap Compensation Day (the makeup day — employee should work this day)
+// NC = No Check-In (FROM_CHECKIN mode: working day but no check-in recorded)
+export type MusterStatus = 'P' | 'A' | 'L' | 'U' | 'HD' | 'WFH' | 'WO' | 'H' | '-' | '·' | 'SD' | 'SC' | 'NC';
 
 // ── GET /api/admin/attendance/muster ─────────────────────────────────────────
 export const getMuster = async (req: AuthRequest, res: Response): Promise<any> => {
@@ -85,7 +88,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
     const employeeIds = employeeRows.map((e) => e.id);
 
     // ── Batch-fetch all attendance data for this month ─────────────────────
-    const [leaves, wfhApps, absentRecords, holidays, corrections, swapDays] = await Promise.all([
+    const [leaves, wfhApps, absentRecords, holidays, corrections, swapDays, swapCompDays, lateRecords, checkInRecords, orgSettings] = await Promise.all([
       prisma.leaveApplication.findMany({
         where: {
           employeeId: { in: employeeIds },
@@ -121,6 +124,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
         },
         select: { id: true, employeeId: true, date: true, correctedStatus: true, originalStatus: true, reason: true },
       }),
+      // SD: absent dates of pending swap days in this month
       prisma.swapDay.findMany({
         where: {
           employeeId: { in: employeeIds },
@@ -129,7 +133,35 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
         },
         select: { employeeId: true, absentDate: true, compensationDate: true, deadline: true },
       }),
+      // SC: compensation dates that fall in this month (from ANY month's absent date)
+      prisma.swapDay.findMany({
+        where: {
+          employeeId: { in: employeeIds },
+          status: 'PENDING_COMPENSATION',
+          compensationDate: { gte: monthStart, lte: monthEnd },
+        },
+        select: { employeeId: true, absentDate: true, compensationDate: true },
+      }),
+      // Late records for this month
+      prisma.lateRecord.findMany({
+        where: {
+          employeeId: { in: employeeIds },
+          date: { gte: monthStart, lte: monthEnd },
+        },
+        select: { employeeId: true, date: true, lateMinutes: true, source: true },
+      }),
+      // CheckIn records for FROM_CHECKIN mode
+      (prisma as any).checkInRecord.findMany({
+        where: {
+          employeeId: { in: employeeIds },
+          date: { gte: toYMD(monthStart), lte: toYMD(monthEnd) },
+        },
+        select: { employeeId: true, date: true, status: true },
+      }),
+      prisma.orgSettings.findUnique({ where: { id: 'global' } }),
     ]);
+
+    const attendanceMode = (orgSettings as any)?.attendanceMode ?? 'AUTO_PRESENT';
 
     const holidaySet = new Set(holidays.map((h) => toYMD(h.date)));
 
@@ -141,10 +173,13 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
     }
 
     // Group by employee
-    const leavesByEmp   = new Map<string, typeof leaves>();
-    const wfhByEmp      = new Map<string, typeof wfhApps>();
-    const absentByEmp   = new Map<string, typeof absentRecords>();
-    const swapDaysByEmp = new Map<string, typeof swapDays>();
+    const leavesByEmp      = new Map<string, typeof leaves>();
+    const wfhByEmp         = new Map<string, typeof wfhApps>();
+    const absentByEmp      = new Map<string, typeof absentRecords>();
+    const swapDaysByEmp    = new Map<string, typeof swapDays>();
+    const swapCompByEmp    = new Map<string, typeof swapCompDays>();
+    const lateByEmp        = new Map<string, typeof lateRecords>();
+    const checkInByEmp     = new Map<string, Set<string>>(); // employeeId → Set<dateStr>
 
     for (const l of leaves) {
       if (!leavesByEmp.has(l.employeeId)) leavesByEmp.set(l.employeeId, []);
@@ -162,6 +197,18 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
       if (!swapDaysByEmp.has(s.employeeId)) swapDaysByEmp.set(s.employeeId, []);
       swapDaysByEmp.get(s.employeeId)!.push(s);
     }
+    for (const s of swapCompDays) {
+      if (!swapCompByEmp.has(s.employeeId)) swapCompByEmp.set(s.employeeId, []);
+      swapCompByEmp.get(s.employeeId)!.push(s);
+    }
+    for (const lr of lateRecords) {
+      if (!lateByEmp.has(lr.employeeId)) lateByEmp.set(lr.employeeId, []);
+      lateByEmp.get(lr.employeeId)!.push(lr);
+    }
+    for (const ci of checkInRecords) {
+      if (!checkInByEmp.has(ci.employeeId)) checkInByEmp.set(ci.employeeId, new Set());
+      checkInByEmp.get(ci.employeeId)!.add(typeof ci.date === 'string' ? ci.date : toYMD(new Date(ci.date)));
+    }
 
     // ── Derive daily attendance per employee ───────────────────────────────
     const employees = employeeRows.map((emp) => {
@@ -169,6 +216,9 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
       const empWfh         = wfhByEmp.get(emp.id)          ?? [];
       const empAbsents     = absentByEmp.get(emp.id)       ?? [];
       const empSwapDays    = swapDaysByEmp.get(emp.id)     ?? [];
+      const empSwapComp    = swapCompByEmp.get(emp.id)     ?? [];
+      const empLate        = lateByEmp.get(emp.id)         ?? [];
+      const empCheckIns    = checkInByEmp.get(emp.id)      ?? new Set<string>();
       const empCorrections = correctionsByEmp.get(emp.id)  ?? new Map();
       const workingDays    = (emp.workingSchedule?.workingDays ?? ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY']) as string[];
       const saturdayRule   = (emp.workingSchedule?.saturdayRule ?? 'NONE') as string;
@@ -176,6 +226,8 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
       const attendance:  Record<number, MusterStatus>                                 = {};
       const correctionMeta: Record<number, { id: string; originalStatus: string; correctedStatus: string; reason: string | null }> = {};
       const swapDayMeta: Record<number, { compensationDate: string | null; deadline: string | null }> = {};
+      const swapCompMeta: Record<number, { absentDate: string }> = {};
+      const lateMeta: Record<number, { minutes: number; source: string }> = {};
       let present = 0, absent = 0, leave = 0, unpaidLeave = 0, halfDay = 0, wfh = 0, weekOff = 0, holiday = 0;
       let workingTotal = 0;
 
@@ -207,8 +259,10 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           // Working day in the past — derive status
           workingTotal++;
 
-          // Swap day takes priority over absent check: if a PENDING swap day exists
-          // for this date, show SD (pending compensation) instead of A
+          // SC: compensation day for a swap (show before everything else for normal working days)
+          const matchedComp = empSwapComp.find((s) => s.compensationDate && toYMD(new Date(s.compensationDate)) === dateStr);
+
+          // SD: absent date of a pending swap day
           const matchedSwap = empSwapDays.find((s) => toYMD(new Date(s.absentDate)) === dateStr);
           const isSwapDay = !!matchedSwap;
           if (isSwapDay && matchedSwap) {
@@ -222,7 +276,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           const isAbsent = !isSwapDay && empAbsents.some((a) => toYMD(new Date(a.date)) === dateStr);
           if (!isSwapDay && isAbsent) {
             attendance[day] = 'A'; absent++;
-          } else {
+          } else if (!isSwapDay) {
             const matchedLeave = empLeaves.find((l) => {
               const from = new Date(l.fromDate); from.setHours(0,0,0,0);
               const to   = new Date(l.toDate);   to.setHours(23,59,59,999);
@@ -234,7 +288,6 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
               } else if (matchedLeave.isHalfDay) {
                 attendance[day] = 'HD'; halfDay++;
               } else if (matchedLeave.isUnpaid || (matchedLeave.paidDays !== null && matchedLeave.paidDays === 0)) {
-                // Fully unpaid leave — show U instead of L
                 attendance[day] = 'U'; unpaidLeave++;
               } else {
                 attendance[day] = 'L'; leave++;
@@ -248,11 +301,32 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
               if (matchedWfh) {
                 if (matchedWfh.isHalfDay) { attendance[day] = 'HD'; halfDay++; }
                 else                      { attendance[day] = 'WFH'; wfh++; }
+              } else if (attendanceMode === 'FROM_CHECKIN' && !empCheckIns.has(dateStr)) {
+                // FROM_CHECKIN mode: no check-in record → NC (counts as absent for salary)
+                attendance[day] = 'NC'; absent++;
               } else {
                 attendance[day] = 'P'; present++;
               }
             }
           }
+
+          // SC overlay: if this day is the compensation day, mark SC (overrides P/WFH but not leave/absent)
+          if (matchedComp && !isSwapDay && !isAbsent) {
+            const cur = attendance[day];
+            if (cur === 'P' || cur === 'WFH') {
+              if (cur === 'P') present--;
+              else wfh--;
+              attendance[day] = 'SC';
+              swapCompMeta[day] = { absentDate: toYMD(new Date(matchedComp.absentDate)) };
+              // SC doesn't decrement workingTotal — it counts as a normal working day
+            }
+          }
+        }
+
+        // Late mark overlay — set regardless of status (P, WFH, SC, etc.)
+        const lateRec = empLate.find((lr) => toYMD(new Date(lr.date)) === dateStr);
+        if (lateRec) {
+          lateMeta[day] = { minutes: lateRec.lateMinutes, source: lateRec.source };
         }
 
         // ── Apply admin correction override ────────────────────────────────
@@ -260,8 +334,8 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
         if (corr) {
           const oldStatus = attendance[day];
           // Undo old status from summary counts
-          if (oldStatus === 'P')        present--;
-          else if (oldStatus === 'A' || oldStatus === 'SD') absent--;
+          if (oldStatus === 'P' || oldStatus === 'SC')        present--;
+          else if (oldStatus === 'A' || oldStatus === 'SD' || oldStatus === 'NC') absent--;
           else if (oldStatus === 'L')   leave--;
           else if (oldStatus === 'U')   unpaidLeave--;
           else if (oldStatus === 'HD')  halfDay--;
@@ -273,8 +347,8 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           attendance[day] = newStatus;
 
           // Add new status to summary counts
-          if (newStatus === 'P')        present++;
-          else if (newStatus === 'A' || newStatus === 'SD') absent++;
+          if (newStatus === 'P' || newStatus === 'SC')        present++;
+          else if (newStatus === 'A' || newStatus === 'SD' || newStatus === 'NC') absent++;
           else if (newStatus === 'L')   leave++;
           else if (newStatus === 'U')   unpaidLeave++;
           else if (newStatus === 'HD')  halfDay++;
@@ -300,6 +374,8 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
         attendance,
         correctionMeta,
         swapDayMeta,
+        swapCompMeta,
+        lateMeta,
         summary: { present, absent, leave, unpaidLeave, halfDay, wfh, weekOff, holiday, workingDays: workingTotal },
       };
     });
@@ -328,6 +404,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
       limit,
       totalPages: Math.ceil(totalEmployees / limit),
       totals,
+      attendanceMode,
     });
   } catch (error) {
     logger.error('getMuster error:', error);
