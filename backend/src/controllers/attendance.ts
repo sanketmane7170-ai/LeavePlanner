@@ -151,7 +151,7 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
         select: { employeeId: true, date: true, lateMinutes: true, source: true },
       }),
       // CheckIn records for FROM_CHECKIN mode
-      (prisma as any).checkInRecord.findMany({
+      prisma.checkInRecord.findMany({
         where: {
           employeeId: { in: employeeIds },
           date: { gte: toYMD(monthStart), lte: toYMD(monthEnd) },
@@ -252,17 +252,27 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           weekOff++;
           // corrections can override week-offs too — applied below
         } else if (dateStr > todayStr) {
-          // Future (upcoming) — do NOT count in workingTotal
-          attendance[day] = '·';
-          continue; // corrections don't apply to future days
+          // Future day — default to · but show SD/SC if a swap day record targets this date
+          const matchedSwapFuture = empSwapDays.find((s) => toYMD(new Date(s.absentDate)) === dateStr);
+          const matchedCompFuture = empSwapComp.find((s) => s.compensationDate && toYMD(new Date(s.compensationDate)) === dateStr);
+          if (matchedSwapFuture) {
+            attendance[day] = 'SD';
+            swapDayMeta[day] = {
+              compensationDate: matchedSwapFuture.compensationDate ? toYMD(new Date(matchedSwapFuture.compensationDate)) : null,
+              deadline: matchedSwapFuture.deadline ? toYMD(new Date(matchedSwapFuture.deadline)) : null,
+            };
+          } else if (matchedCompFuture) {
+            attendance[day] = 'SC';
+            swapCompMeta[day] = { absentDate: toYMD(new Date(matchedCompFuture.absentDate)) };
+          } else {
+            attendance[day] = '·';
+          }
+          continue; // future days: don't count in stats, no corrections, no late marks
         } else {
           // Working day in the past — derive status
           workingTotal++;
 
-          // SC: compensation day for a swap (show before everything else for normal working days)
-          const matchedComp = empSwapComp.find((s) => s.compensationDate && toYMD(new Date(s.compensationDate)) === dateStr);
-
-          // SD: absent date of a pending swap day
+          // SD: absent date of a pending swap day (takes priority)
           const matchedSwap = empSwapDays.find((s) => toYMD(new Date(s.absentDate)) === dateStr);
           const isSwapDay = !!matchedSwap;
           if (isSwapDay && matchedSwap) {
@@ -310,7 +320,8 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
             }
           }
 
-          // SC overlay: if this day is the compensation day, mark SC (overrides P/WFH but not leave/absent)
+          // SC overlay: if this past day is the compensation day, mark SC (overrides P/WFH but not leave/absent/SD)
+          const matchedComp = empSwapComp.find((s) => s.compensationDate && toYMD(new Date(s.compensationDate)) === dateStr);
           if (matchedComp && !isSwapDay && !isAbsent) {
             const cur = attendance[day];
             if (cur === 'P' || cur === 'WFH') {
@@ -318,7 +329,6 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
               else wfh--;
               attendance[day] = 'SC';
               swapCompMeta[day] = { absentDate: toYMD(new Date(matchedComp.absentDate)) };
-              // SC doesn't decrement workingTotal — it counts as a normal working day
             }
           }
         }
