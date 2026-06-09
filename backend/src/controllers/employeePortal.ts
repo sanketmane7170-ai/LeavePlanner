@@ -406,11 +406,17 @@ ${wp ? `
 
     const { question } = req.body as { question?: string };
 
-    const systemPrompt = `You are an HR AI assistant for Innovizia. Your job is to explain company leave and WFH policies to employees in a clear, friendly, and helpful way. Use simple language. When explaining policy details, use numbered bullet points — one point per line. Be concise but thorough. Address the employee by their first name. Always be encouraging and supportive.`;
+    const systemPrompt = `You are a concise HR policy assistant for Innovizia. Rules you must follow:
+- Answer ONLY what the employee specifically asked. Never volunteer extra information.
+- Keep every reply to 1–4 short sentences. No exceptions.
+- Use plain conversational text. No markdown, no bullet points, no bold, no headers.
+- No greetings, no sign-offs, no "Great question!", no "I hope this helps!", no encouragement.
+- Do not repeat information the employee did not ask about.
+- If the question is unrelated to leave or WFH policy, say: "I can only help with leave and WFH policy questions."`;
 
     const userMessage = question
-      ? `Here is my policy information:\n\n${policyContext}\n\nMy question: ${question}`
-      : `Here is my policy information:\n\n${policyContext}\n\nPlease explain all my leave and WFH policies in a clear, friendly way. Give me key insights about what I'm entitled to, what I've used so far, and any important rules I should know about. Format as numbered bullet points.`;
+      ? `Employee policy data:\n${policyContext}\n\nQuestion: ${question}`
+      : `Say: "Hello! How can I help you?"  — nothing else.`;
 
     const OpenAI = (await import('openai')).default;
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

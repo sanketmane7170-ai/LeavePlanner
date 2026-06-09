@@ -104,6 +104,7 @@ model Employee {
   announcementDismissals  AnnouncementDismissal[]
   attendanceCorrections   AttendanceCorrection[]
   checkInRecords          CheckInRecord[]
+  swapDays                SwapDay[]
   canViewTeamCalendar  Boolean            @default(false)
 
   // Notice period
@@ -507,6 +508,12 @@ enum CheckInStatus {
   ON_WFH
 }
 
+enum SwapDayStatus {
+  PENDING_COMPENSATION
+  COMPENSATED
+  DEFAULTED
+}
+
 model DailyCheckInCode {
   id        String   @id @default(cuid())
   code      String
@@ -556,4 +563,28 @@ model CheckInRecord {
   @@index([date])
   @@index([employeeId])
   @@index([status])
+}
+
+// ── Swap Day Module ───────────────────────────────────────────────────────────
+
+model SwapDay {
+  id               String        @id @default(cuid())
+  employeeId       String
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  absentDate       DateTime      // the day the employee missed work
+  compensationDate DateTime?     // the makeup day assigned by admin (can be set later)
+  deadline         DateTime?     // set when compensationDate is assigned
+  status           SwapDayStatus @default(PENDING_COMPENSATION)
+  absentMarked     Boolean       @default(false) // true once AbsentRecord is created
+  absentRecordId   String?       // FK ref after absent is marked
+  note             String?
+  createdById      String        // admin userId who created
+  resolvedById     String?       // admin userId who marked compensated/defaulted
+  resolvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([employeeId, status])
+  @@index([status, deadline])
+  @@index([compensationDate])
 }

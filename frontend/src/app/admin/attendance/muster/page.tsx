@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // U = Unpaid leave (fully unpaid approved leave, no salary impact)
-type MusterStatus = "P" | "A" | "L" | "U" | "HD" | "WFH" | "WO" | "H" | "-" | "·";
+type MusterStatus = "P" | "A" | "L" | "U" | "HD" | "WFH" | "WO" | "H" | "-" | "·" | "SD";
 
 interface CorrectionMeta {
   id: string;
@@ -32,6 +32,7 @@ interface MusterEmployee {
   designation: string | null;
   attendance: Record<number, MusterStatus>;
   correctionMeta: Record<number, CorrectionMeta>;
+  swapDayMeta: Record<number, { compensationDate: string; deadline: string }>;
   summary: {
     present: number; absent: number; leave: number; unpaidLeave: number;
     halfDay: number; wfh: number; weekOff: number;
@@ -76,6 +77,7 @@ const S: Record<MusterStatus, { label: string; cell: string; badge: string }> = 
   WFH: { label: "WFH",          cell: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700",                    badge: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-700" },
   WO:  { label: "Week Off",     cell: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700",                  badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700" },
   H:   { label: "Holiday",      cell: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700",         badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-700" },
+  SD:  { label: "Swap Day",      cell: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700",         badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-700" },
   "-": { label: "Pre-joining",  cell: "", badge: "" },
   "·": { label: "Upcoming",     cell: "", badge: "" },
 };
@@ -364,7 +366,7 @@ export default function MusterViewPage() {
 
       {/* ── Legend ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {(["P","A","L","U","HD","WFH","WO","H"] as MusterStatus[]).map((s) => (
+        {(["P","A","SD","L","U","HD","WFH","WO","H"] as MusterStatus[]).map((s) => (
           <span key={s} className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold", S[s].badge)}>
             {s} {S[s].label}
           </span>
@@ -485,16 +487,26 @@ export default function MusterViewPage() {
                                   correction: emp.correctionMeta?.[dayNum],
                                 });
                               }}
-                              title={emp.correctionMeta?.[dayNum] ? `Corrected (was ${emp.correctionMeta[dayNum].originalStatus})` : cfg.label}
+                              title={
+                                emp.correctionMeta?.[dayNum]
+                                  ? `Corrected (was ${emp.correctionMeta[dayNum].originalStatus})`
+                                  : status === "SD" && emp.swapDayMeta?.[dayNum]
+                                    ? `Swap Day — Comp: ${emp.swapDayMeta[dayNum].compensationDate} | Deadline: ${emp.swapDayMeta[dayNum].deadline}`
+                                    : cfg.label
+                              }
                               className={cn(
                                 "relative flex items-center justify-center w-7 h-6 rounded text-[10px] font-bold transition-transform hover:scale-110",
                                 cfg.cell,
-                                emp.correctionMeta?.[dayNum] && "ring-2 ring-violet-400 dark:ring-violet-500"
+                                emp.correctionMeta?.[dayNum] && "ring-2 ring-violet-400 dark:ring-violet-500",
+                                status === "SD" && !emp.correctionMeta?.[dayNum] && "ring-1 ring-amber-400 dark:ring-amber-500"
                               )}
                             >
                               {status}
                               {emp.correctionMeta?.[dayNum] && (
                                 <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-violet-500 border border-white dark:border-slate-900" />
+                              )}
+                              {status === "SD" && !emp.correctionMeta?.[dayNum] && (
+                                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 border border-white dark:border-slate-900" />
                               )}
                             </button>
                           </td>

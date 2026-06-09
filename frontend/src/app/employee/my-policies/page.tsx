@@ -4,14 +4,10 @@ import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import {
   FileText,
-  MessageSquare,
   Send,
   Sparkles,
   Calendar,
   Home,
-  AlertCircle,
-  HelpCircle,
-  Clock,
   CheckCircle,
   XCircle,
   RefreshCw,
@@ -21,6 +17,20 @@ import { formatDate, LEAVE_TYPE_LABELS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { WeaveSpinner } from "@/components/ui/weave-spinner";
 import { cn } from "@/lib/utils";
+
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1 px-1 py-1">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce"
+          style={{ animationDelay: `${i * 150}ms`, animationDuration: "900ms" }}
+        />
+      ))}
+    </div>
+  );
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PolicyRule {
@@ -115,30 +125,16 @@ export default function EmployeePoliciesPage() {
     }
   };
 
-  const fetchInitialExplanation = async () => {
-    setAiLoading(true);
-    try {
-      const res = await api.post<{ explanation: string }>("/employee/portal/policy-explain", {});
-      setChatMessages([
-        {
-          role: "assistant",
-          content: res.data.explanation,
-          timestamp: new Date(),
-        },
-      ]);
-    } catch (err: any) {
-      console.error(err);
-      setChatMessages([
-        {
-          role: "assistant",
-          content: "Hello! I am your Innovizia AI Partner. I had trouble auto-summarizing your policies, but feel free to ask me any questions about leaves, WFH, or probation rules, and I will do my best to help!",
-          timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setAiLoading(false);
-      setLoading(false);
-    }
+  const fetchInitialExplanation = () => {
+    setChatMessages([
+      {
+        role: "assistant",
+        content: "Hello! How can I help you?",
+        timestamp: new Date(),
+      },
+    ]);
+    setAiLoading(false);
+    setLoading(false);
   };
 
   const handleAskQuestion = async (questionText: string) => {
@@ -481,74 +477,79 @@ export default function EmployeePoliciesPage() {
 
         {/* RIGHT COLUMN: AI Policy Assistant */}
         <div className="lg:col-span-5">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden flex flex-col h-[650px] shadow-xl dark:shadow-2xl relative">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col h-[650px] shadow-sm">
             {/* Header */}
-            <div className="bg-slate-50 dark:bg-slate-950 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-orange-500/10 dark:bg-orange-500/20 flex items-center justify-center border border-orange-500/20 dark:border-orange-500/30 animate-pulse">
-                  <Sparkles className="text-orange-500" size={15} />
+            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={cn(
+                  "h-8 w-8 rounded-full bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center border border-orange-100 dark:border-orange-900/40",
+                  aiLoading && "animate-pulse"
+                )}>
+                  <Sparkles className="text-orange-500" size={14} />
                 </div>
                 <div>
-                  <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                    Innovizia AI Assistant
-                  </h3>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Your policy copilot</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">Policy Assistant</p>
+                  <p className="text-[10px] text-slate-400">Ask anything about your leave & WFH rules</p>
                 </div>
               </div>
               <button
                 onClick={fetchInitialExplanation}
-                title="Reset conversation"
+                title="Clear chat"
                 disabled={aiLoading}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
               >
-                <RefreshCw size={14} className={aiLoading ? "animate-spin" : ""} />
+                <RefreshCw size={13} className={aiLoading ? "animate-spin" : ""} />
               </button>
             </div>
 
             {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
               {chatMessages.map((msg, index) => (
                 <div
                   key={index}
                   className={cn(
-                    "flex flex-col max-w-[85%] rounded-2xl p-3.5 text-sm leading-relaxed whitespace-pre-line",
-                    msg.role === "user"
-                      ? "bg-primary text-white ml-auto rounded-tr-none"
-                      : "bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700/50 text-slate-800 dark:text-slate-200 mr-auto rounded-tl-none"
+                    "flex",
+                    msg.role === "user" ? "justify-end" : "justify-start"
                   )}
                 >
-                  <p className="text-[13px]">{msg.content}</p>
-                  <span className={cn(
-                    "text-[9px] mt-2 self-end",
-                    msg.role === "user" ? "text-white/80" : "text-slate-400 dark:text-slate-500"
+                  <div className={cn(
+                    "max-w-[80%] rounded-2xl px-3.5 py-2.5",
+                    msg.role === "user"
+                      ? "bg-orange-500 text-white rounded-br-sm"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-sm"
                   )}>
-                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                    <p className="text-[13px] leading-relaxed whitespace-pre-line">{msg.content}</p>
+                    <p className={cn(
+                      "text-[10px] mt-1 text-right",
+                      msg.role === "user" ? "text-orange-100" : "text-slate-400 dark:text-slate-500"
+                    )}>
+                      {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
                 </div>
               ))}
 
               {aiLoading && (
-                <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700/50 rounded-2xl rounded-tl-none p-3.5 mr-auto max-w-[85%] flex items-center gap-2">
-                  <WeaveSpinner size={16} className="text-orange-500 animate-spin" />
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Generating policy insights...</span>
+                <div className="flex justify-start">
+                  <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-bl-sm px-3.5 py-2.5">
+                    <TypingIndicator />
+                  </div>
                 </div>
               )}
 
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Quick Questions suggestion box */}
-            <div className="bg-slate-50/50 dark:bg-slate-950/45 p-3 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5">
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold tracking-wider uppercase mb-1">
-                Frequently Asked
-              </p>
+            {/* Quick Questions */}
+            <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium mb-2">Quick questions</p>
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_QUESTIONS.map((q, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleAskQuestion(q)}
                     disabled={aiLoading}
-                    className="text-[11px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700/70 transition-colors text-left"
+                    className="text-[11px] bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-40"
                   >
                     {q}
                   </button>
@@ -556,30 +557,27 @@ export default function EmployeePoliciesPage() {
               </div>
             </div>
 
-            {/* Input box */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800">
+            {/* Input */}
+            <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800">
               <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAskQuestion(inputQuestion);
-                }}
+                onSubmit={(e) => { e.preventDefault(); handleAskQuestion(inputQuestion); }}
                 className="flex items-center gap-2"
               >
                 <input
                   type="text"
                   value={inputQuestion}
                   onChange={(e) => setInputQuestion(e.target.value)}
-                  placeholder="Ask policy rules (e.g. carry forward, notice period)..."
+                  placeholder="Ask about leave, WFH, carry forward..."
                   disabled={aiLoading}
-                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-primary dark:focus:border-slate-700 focus:ring-0 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 text-xs placeholder-slate-400 dark:placeholder-slate-500 outline-none transition-colors"
+                  className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-orange-400 dark:focus:border-orange-600 transition-colors"
                 />
-                <Button
+                <button
                   type="submit"
                   disabled={aiLoading || !inputQuestion.trim()}
-                  className="bg-orange-500 hover:bg-orange-600 text-white h-9 w-9 p-0 flex items-center justify-center shrink-0 rounded-xl transition-all"
+                  className="h-9 w-9 flex items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors shrink-0"
                 >
                   <Send size={14} />
-                </Button>
+                </button>
               </form>
             </div>
           </div>

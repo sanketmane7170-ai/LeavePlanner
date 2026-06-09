@@ -10,7 +10,7 @@ import {
 import { toast } from "sonner";
 import {
   Users, Clock, CalendarOff, Monitor, AlertCircle, CheckCircle2, ChevronRight,
-  Key, RotateCcw, Copy,
+  Key, RotateCcw, Copy, ArrowRightLeft,
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
@@ -29,6 +29,15 @@ interface DashboardStats {
   onLeaveToday: number;
   onWfhToday: number;
   absentToday: number;
+  pendingSwapDays: number;
+}
+
+interface OverdueSwapDay {
+  id: string;
+  absentDate: string;
+  compensationDate: string;
+  deadline: string;
+  employee: { id: string; fullName: string; employeeId: string; department: string | null };
 }
 
 interface MonthlyData {
@@ -101,6 +110,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveWithEmployee[]>([]);
   const [upcomingLeaves, setUpcomingLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [overdueSwapDays, setOverdueSwapDays] = useState<OverdueSwapDay[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [typeData, setTypeData] = useState<TypeData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,6 +169,7 @@ export default function AdminDashboard() {
       setStats(statsRes.data.stats);
       setPendingLeaves(statsRes.data.pendingLeaves ?? []);
       setUpcomingLeaves(statsRes.data.upcomingLeaves ?? []);
+      setOverdueSwapDays(statsRes.data.overdueSwapDays ?? []);
       setMonthlyData(monthlyRes.data ?? []);
       setTypeData(typeRes.data ?? []);
     } catch {
@@ -225,6 +236,20 @@ export default function AdminDashboard() {
         <StatCard label="On Leave Today" value={stats?.onLeaveToday ?? "—"} icon={CalendarOff} color="text-red-500 bg-red-50 dark:bg-red-900/20" />
         <StatCard label="On WFH Today" value={stats?.onWfhToday ?? "—"} icon={Monitor} color="text-green-600 bg-green-50 dark:bg-green-900/20" />
         <StatCard label="Absent Today" value={stats?.absentToday ?? "—"} icon={AlertCircle} color="text-slate-500 bg-slate-100 dark:bg-slate-800" />
+        <Link href="/admin/swap-days" className="block">
+          <div className={cn(
+            "bg-white dark:bg-slate-900 rounded-2xl p-5 border shadow-sm hover:shadow-md transition-shadow cursor-pointer",
+            (stats?.pendingSwapDays ?? 0) > 0
+              ? "border-amber-300 dark:border-amber-700"
+              : "border-slate-200 dark:border-slate-800"
+          )}>
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center mb-3 text-amber-600 bg-amber-50 dark:bg-amber-900/20">
+              <ArrowRightLeft size={20} />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats?.pendingSwapDays ?? "—"}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Pending Swap Days</p>
+          </div>
+        </Link>
       </div>
 
       {/* Daily Check-In Code banner — shown when check-in module is enabled */}
@@ -442,6 +467,38 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Overdue Swap Days */}
+      {overdueSwapDays.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-red-200 dark:border-red-800/60 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-red-100 dark:border-red-800/40">
+            <h3 className="font-heading font-semibold text-red-700 dark:text-red-400 flex items-center gap-2">
+              <ArrowRightLeft size={16} /> Overdue Swap Days
+            </h3>
+            <Link href="/admin/swap-days" className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium flex items-center gap-1">
+              View all <ChevronRight size={14} />
+            </Link>
+          </div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {overdueSwapDays.map((s) => (
+              <div key={s.id} className="flex items-center gap-3 px-5 py-3.5">
+                <div className="h-8 w-8 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 flex items-center justify-center text-xs font-bold shrink-0">
+                  {s.employee.fullName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{s.employee.fullName}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Absent: {formatDate(s.absentDate)} · Comp was: {formatDate(s.compensationDate)}
+                  </p>
+                </div>
+                <span className="text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full shrink-0">
+                  Overdue
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

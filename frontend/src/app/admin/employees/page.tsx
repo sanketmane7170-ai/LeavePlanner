@@ -74,7 +74,7 @@ function getInitials(name: string) {
 }
 
 // ── Tabs (employee detail) ────────────────────────────────────────────────────
-type TabId = "info" | "leaves" | "wfh" | "schedule" | "notice";
+type TabId = "info" | "leaves" | "wfh" | "schedule" | "notice" | "swap-days";
 
 function Tabs({
   active,
@@ -86,11 +86,12 @@ function Tabs({
   isOnNotice?: boolean;
 }) {
   const tabs: { id: TabId; label: string }[] = [
-    { id: "info",     label: "Info"     },
-    { id: "leaves",   label: "Leaves"   },
-    { id: "wfh",      label: "WFH"      },
-    { id: "schedule", label: "Schedule" },
-    { id: "notice",   label: isOnNotice ? "⚠ Notice" : "Notice" },
+    { id: "info",      label: "Info"      },
+    { id: "leaves",    label: "Leaves"    },
+    { id: "wfh",       label: "WFH"       },
+    { id: "schedule",  label: "Schedule"  },
+    { id: "swap-days", label: "Swap Days" },
+    { id: "notice",    label: isOnNotice ? "⚠ Notice" : "Notice" },
   ];
   return (
     <div className="flex border-b border-slate-200 dark:border-slate-800 px-6">
@@ -311,6 +312,59 @@ function NoticePeriodTab({ employee, onSaved }: {
           {isActive ? "Update Notice" : "Set Notice Period"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Employee Swap Days Tab ────────────────────────────────────────────────────
+function EmployeeSwapDaysTab({ employeeId }: { employeeId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/admin/swap-days/employee/${employeeId}`)
+      .then((r) => setRows(r.data))
+      .catch(() => toast.error("Failed to load swap days"))
+      .finally(() => setLoading(false));
+  }, [employeeId]);
+
+  const fmt = (d: string) =>
+    new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+  const statusBadge = (row: any) => {
+    if (row.status === "PENDING_COMPENSATION" && row.isOverdue)
+      return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Overdue</span>;
+    if (row.status === "COMPENSATED")
+      return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Compensated</span>;
+    if (row.status === "DEFAULTED")
+      return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Defaulted</span>;
+    return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Pending</span>;
+  };
+
+  if (loading) return <div className="flex justify-center py-10"><WeaveSpinner /></div>;
+
+  if (rows.length === 0) {
+    return (
+      <div className="text-center py-12 text-slate-400">
+        <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        <p className="text-sm">No swap days recorded for this employee</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 flex flex-col gap-3">
+      <p className="text-xs text-slate-500 dark:text-slate-400">Swap days track missed workdays and their assigned compensation dates.</p>
+      {rows.map((r) => (
+        <div key={r.id} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 flex flex-col gap-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-slate-800 dark:text-white">Absent: {fmt(r.absentDate)}</span>
+            {statusBadge(r)}
+          </div>
+          <p className="text-xs text-slate-500">Comp: {fmt(r.compensationDate)} · Deadline: {fmt(r.deadline)}</p>
+          {r.note && <p className="text-xs text-slate-400 italic">{r.note}</p>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -819,6 +873,10 @@ export default function EmployeesPage() {
 
                 {sheetTab === "wfh" && (
                   <EmployeeWfhTab employeeId={selectedEmployee.id} />
+                )}
+
+                {sheetTab === "swap-days" && (
+                  <EmployeeSwapDaysTab employeeId={selectedEmployee.id} />
                 )}
 
                 {sheetTab === "schedule" && (

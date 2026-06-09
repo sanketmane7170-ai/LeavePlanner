@@ -32,6 +32,7 @@ import systemLogsRoutes from './routes/systemLogs';
 import analyticsRoutes from './routes/analytics';
 import adminCheckinRoutes   from './routes/adminCheckin';
 import employeeCheckinRoutes from './routes/employeeCheckin';
+import swapDayRoutes from './routes/swapDay';
 import { startAbsentCron } from './services/absentCron';
 import { startBackupCron } from './services/backupCron';
 import { startMonthlyCron } from './services/monthlyCron';
@@ -45,6 +46,7 @@ import { startWfhReminderCron }   from './services/wfhReminderCron';
 import { startMaintenanceCron }   from './services/maintenanceCron';
 import { startCheckInCrons }             from './services/checkinCron';
 import { startWeeklyAttendanceEmailCron } from './services/weeklyAttendanceEmailCron';
+import { startSwapDayCron } from './services/swapDayCron';
 import { seedEmailTemplates } from './services/emailTemplateSeed';
 
 const app = express();
@@ -131,6 +133,7 @@ app.use('/api/admin/system-logs',  systemLogsRoutes);
 app.use('/api/admin/reports',      analyticsRoutes);
 app.use('/api/admin/checkin',      adminCheckinRoutes);
 app.use('/api/employee/checkin',   employeeCheckinRoutes);
+app.use('/api/admin/swap-days',    swapDayRoutes);
 app.use('/api/support',          supportRoutes);
 app.use('/api/employee/portal',  employeePortalRoutes);
 app.use('/api/notifications',    notificationRoutes);
@@ -169,6 +172,7 @@ const server = app.listen(PORT, () => {
   startMaintenanceCron();
   startCheckInCrons();
   startWeeklyAttendanceEmailCron();
+  startSwapDayCron();
   seedEmailTemplates().catch((e) => logger.error('[emailTemplateSeed]', e));
 });
 

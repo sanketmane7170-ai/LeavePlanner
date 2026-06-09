@@ -109,12 +109,40 @@ router.patch('/change-password', authenticate, async (req: AuthRequest, res: Res
     }
 
     const hashed = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: userId },
       data: { password: hashed, isFirstLogin: false, tokenVersion: { increment: 1 } },
+      include: { employee: true },
     });
 
-    return res.json({ message: 'Password changed successfully' });
+    // Issue a fresh JWT with the new tokenVersion so the session continues uninterrupted
+    const newToken = signToken(
+      { userId: updated.id, role: updated.role, tokenVersion: updated.tokenVersion, isFirstLogin: false },
+      '1d'
+    );
+    res.cookie('jwt', newToken, {
+      httpOnly: true,
+      secure: process.env.COOKIE_SECURE
+        ? process.env.COOKIE_SECURE === 'true'
+        : process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    return res.json({
+      message: 'Password changed successfully',
+      user: {
+        id: updated.id,
+        email: updated.email,
+        role: updated.role,
+        isFirstLogin: false,
+        employee: updated.employee ? {
+          fullName: updated.employee.fullName,
+          employeeId: updated.employee.employeeId,
+          canViewTeamCalendar: updated.employee.canViewTeamCalendar,
+        } : null,
+      },
+    });
   } catch (error) {
     logger.error('change-password error:', error);
     return res.status(500).json({ message: 'Internal server error' });

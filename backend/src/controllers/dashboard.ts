@@ -24,6 +24,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
       absentToday,
       pendingLeaves,
       upcomingLeaves,
+      pendingSwapDaysCount,
+      overdueSwapDays,
     ] = await Promise.all([
       prisma.employee.count({ where: { isActive: true } }),
       prisma.leaveApplication.count({ where: { status: 'PENDING' } }),
@@ -58,6 +60,19 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
         orderBy: { fromDate: 'asc' },
         take: 10,
       }),
+
+      // Pending swap days count
+      prisma.swapDay.count({ where: { status: 'PENDING_COMPENSATION' } }),
+
+      // Top 5 overdue swap days (comp date passed, still pending)
+      prisma.swapDay.findMany({
+        where: { status: 'PENDING_COMPENSATION', compensationDate: { lt: today } },
+        include: {
+          employee: { select: { id: true, fullName: true, employeeId: true, department: true } },
+        },
+        orderBy: { compensationDate: 'asc' },
+        take: 5,
+      }),
     ]);
 
     return res.json({
@@ -67,9 +82,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
         onLeaveToday,
         onWfhToday,
         absentToday,
+        pendingSwapDays: pendingSwapDaysCount,
       },
       pendingLeaves,
       upcomingLeaves,
+      overdueSwapDays,
     });
   } catch (error) {
     logger.error('getDashboardStats error:', error);

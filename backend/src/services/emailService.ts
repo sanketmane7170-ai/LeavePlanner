@@ -500,3 +500,70 @@ export async function sendYearStartRolloverEmail(
     reviewUrl:   `${APP_URL}/admin/employees`,
   });
 }
+
+// ── Swap Day emails ───────────────────────────────────────────────────────────
+
+type SwapDayEmployee = { fullName: string; employeeId: string; department?: string | null };
+
+export async function sendSwapDayCreatedEmail(
+  adminEmails: string[],
+  employee: SwapDayEmployee,
+  details: { absentDate: string; compensationDate: string; deadline: string; note: string; swapDayId: string }
+): Promise<void> {
+  if (!adminEmails.length) return;
+  await send(adminEmails, 'SWAP_DAY_CREATED', {
+    employeeName:     employee.fullName,
+    employeeId:       employee.employeeId,
+    department:       employee.department || '—',
+    absentDate:       details.absentDate,
+    compensationDate: details.compensationDate,
+    deadline:         details.deadline,
+    note:             details.note || '—',
+    swapDayUrl:       `${APP_URL}/admin/swap-days/${details.swapDayId}`,
+  });
+}
+
+export async function sendSwapDayCompensatedEmail(
+  adminEmails: string[],
+  employee: SwapDayEmployee,
+  details: { absentDate: string; compensationDate: string; swapDayId: string }
+): Promise<void> {
+  if (!adminEmails.length) return;
+  await send(adminEmails, 'SWAP_DAY_COMPENSATED', {
+    employeeName:     employee.fullName,
+    employeeId:       employee.employeeId,
+    absentDate:       details.absentDate,
+    compensationDate: details.compensationDate,
+    swapDayUrl:       `${APP_URL}/admin/swap-days`,
+  });
+}
+
+export async function sendSwapDayDefaultedEmail(
+  adminEmails: string[],
+  employee: SwapDayEmployee,
+  details: { absentDate: string; compensationDate: string; deadline: string; swapDayId: string }
+): Promise<void> {
+  if (!adminEmails.length) return;
+  await send(adminEmails, 'SWAP_DAY_DEFAULTED', {
+    employeeName:     employee.fullName,
+    employeeId:       employee.employeeId,
+    absentDate:       details.absentDate,
+    compensationDate: details.compensationDate,
+    deadline:         details.deadline,
+    swapDayUrl:       `${APP_URL}/admin/swap-days`,
+  });
+}
+
+export async function sendSwapDayWeeklyDigestEmail(
+  adminEmails: string[],
+  stats: { pendingCount: number; overdueCount: number; dueSoonCount: number; overdueListHtml: string }
+): Promise<void> {
+  if (!adminEmails.length || stats.pendingCount === 0) return;
+  await send(adminEmails, 'SWAP_DAY_WEEKLY_DIGEST', {
+    pendingCount:    String(stats.pendingCount),
+    overdueCount:    String(stats.overdueCount),
+    dueSoonCount:    String(stats.dueSoonCount),
+    overdueListHtml: stats.overdueListHtml,
+    swapDayUrl:      `${APP_URL}/admin/swap-days`,
+  });
+}

@@ -368,13 +368,16 @@ export const employeeCheckIn = async (req: AuthRequest, res: Response): Promise<
   try {
     const userId = req.user!.userId;
     const { code, lat, lng, address } = req.body as {
-      code:     string;
-      lat?:     number;
-      lng?:     number;
-      address?: string;
+      code:    string;
+      lat:     number;
+      lng:     number;
+      address: string;
     };
 
     if (!code) return res.status(400).json({ message: 'Check-in code is required' });
+    if (lat === undefined || lat === null || lng === undefined || lng === null) {
+      return res.status(400).json({ message: 'Location is required to check in. Please allow location access and try again.' });
+    }
 
     const employee = await prisma.employee.findUnique({ where: { userId } });
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
@@ -458,7 +461,11 @@ export const employeeCheckIn = async (req: AuthRequest, res: Response): Promise<
 export const employeeCheckOut = async (req: AuthRequest, res: Response): Promise<any> => {
   try {
     const userId = req.user!.userId;
-    const { lat, lng, address } = req.body as { lat?: number; lng?: number; address?: string };
+    const { lat, lng, address } = req.body as { lat: number; lng: number; address: string };
+
+    if (lat === undefined || lat === null || lng === undefined || lng === null) {
+      return res.status(400).json({ message: 'Location is required to check out. Please allow location access and try again.' });
+    }
 
     const employee = await prisma.employee.findUnique({ where: { userId } });
     if (!employee) return res.status(404).json({ message: 'Employee not found' });

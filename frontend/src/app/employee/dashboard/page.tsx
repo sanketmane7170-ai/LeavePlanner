@@ -269,15 +269,11 @@ function CheckInModal({
   const [location, setLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (open) {
-      setCode(""); setLocation(null);
-      setTimeout(() => codeRef.current?.focus(), 100);
-    }
-  }, [open]);
-
   const getLocation = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -292,14 +288,33 @@ function CheckInModal({
         setLocation({ lat, lng, address });
         setLocating(false);
       },
-      () => setLocating(false),
-      { timeout: 8000 }
+      () => {
+        setLocating(false);
+        toast.error("Location access denied. Please allow location to check in/out.");
+      },
+      { timeout: 10000 }
     );
   };
+
+  useEffect(() => {
+    if (open) {
+      setCode("");
+      setLocation(null);
+      setTimeout(() => codeRef.current?.focus(), 100);
+      // Auto-fetch location as soon as modal opens — it's required
+      getLocation();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleSubmit = async () => {
     if (mode === "in" && !code.trim()) {
       toast.error("Please enter the check-in code");
+      return;
+    }
+    if (!location) {
+      toast.error("Location is required. Please wait while we fetch your location.");
+      getLocation();
       return;
     }
     setLoading(true);
@@ -307,12 +322,16 @@ function CheckInModal({
       if (mode === "in") {
         await api.post("/employee/checkin/in", {
           code: code.trim().toUpperCase(),
-          ...(location && { lat: location.lat, lng: location.lng, address: location.address }),
+          lat: location.lat,
+          lng: location.lng,
+          address: location.address,
         });
         toast.success("Checked in successfully!");
       } else {
         await api.post("/employee/checkin/out", {
-          ...(location && { lat: location.lat, lng: location.lng, address: location.address }),
+          lat: location.lat,
+          lng: location.lng,
+          address: location.address,
         });
         toast.success("Checked out successfully!");
       }
@@ -358,15 +377,27 @@ function CheckInModal({
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <MapPin size={13} /> Location
-                <span className="text-slate-400 font-normal">(optional)</span>
+                <span className="text-red-500 font-normal text-xs">*required</span>
               </label>
               {!location && (
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={getLocation} disabled={locating}>
                   {locating ? <Loader2 size={12} className="animate-spin mr-1" /> : <MapPin size={12} className="mr-1" />}
-                  {locating ? "Locating…" : "Get Location"}
+                  {locating ? "Fetching location…" : "Retry Location"}
                 </Button>
               )}
             </div>
+            {locating && !location && (
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <Loader2 size={13} className="text-blue-500 animate-spin shrink-0" />
+                <p className="text-xs text-blue-700 dark:text-blue-400">Fetching your location…</p>
+              </div>
+            )}
+            {!locating && !location && (
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <MapPin size={13} className="text-red-500 shrink-0" />
+                <p className="text-xs text-red-700 dark:text-red-400">Location not captured. Please allow access and retry.</p>
+              </div>
+            )}
             {location && (
               <div className="flex items-start gap-2 p-2.5 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
                 <MapPin size={13} className="text-green-600 mt-0.5 shrink-0" />
@@ -379,11 +410,11 @@ function CheckInModal({
           <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
           <Button
             onClick={handleSubmit}
-            disabled={loading || (mode === "in" && !code.trim())}
+            disabled={loading || locating || !location || (mode === "in" && !code.trim())}
             className={mode === "in" ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"}
           >
-            {loading && <Loader2 size={13} className="animate-spin mr-1.5" />}
-            {mode === "in" ? "Check In" : "Check Out"}
+            {(loading || locating) && <Loader2 size={13} className="animate-spin mr-1.5" />}
+            {locating ? "Getting location…" : mode === "in" ? "Check In" : "Check Out"}
           </Button>
         </DialogFooter>
       </DialogContent>

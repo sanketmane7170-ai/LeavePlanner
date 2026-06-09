@@ -531,6 +531,127 @@ ${BTN('Apply for WFH', '{{applyUrl}}')}
     ],
   },
 
+  // ── Swap Day Templates ──────────────────────────────────────────────────────
+
+  {
+    key: 'SWAP_DAY_CREATED', name: 'Swap Day Created — Admin Confirmation',
+    description: 'Sent to admins when a swap day is recorded for an employee.',
+    category: 'ADMIN',
+    subject: 'Swap Day Recorded — {{employeeName}} (Absent: {{absentDate}})',
+    bodyHtml: WRAP('{{orgName}}', 'Leave Management · Swap Day', `
+${INTRO('A <strong>Swap Day</strong> has been recorded. The employee will miss work on the absent date and is expected to compensate on the assigned date.')}
+${SECTION('Employee')}
+${TABLE(ROW('Name', '{{employeeName}}') + ROW('Employee ID', '{{employeeId}}') + ROW('Department', '{{department}}', true))}
+${SECTION('Swap Day Details')}
+${TABLE(
+  ROW('Absent Date', '{{absentDate}}') +
+  ROW('Compensation Date', '{{compensationDate}}') +
+  ROW('Deadline', '{{deadline}}') +
+  ROW('Note', '{{note}}', true)
+)}
+<div style="margin:0 0 24px 0;"><span style="background:#EFF6FF;color:#1D4ED8;padding:4px 14px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block;">Pending Compensation</span></div>
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">If the employee does not work on the compensation date by the deadline, mark this as defaulted to record the absent day for salary calculation.</p>
+${BTN('View Swap Day', '{{swapDayUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',          description: 'Organization name',       example: 'Innovizia'    },
+      { name: 'employeeName',     description: "Employee's full name",    example: 'Priya Sharma' },
+      { name: 'employeeId',       description: 'Employee ID code',        example: 'EMP-0042'     },
+      { name: 'department',       description: 'Department name',         example: 'Engineering'  },
+      { name: 'absentDate',       description: 'The day they missed',     example: '11 Jun 2026'  },
+      { name: 'compensationDate', description: 'The makeup day',          example: '14 Jun 2026'  },
+      { name: 'deadline',         description: 'Last date to compensate', example: '11 Jul 2026'  },
+      { name: 'note',             description: 'Admin note',              example: 'Verbal request approved by manager' },
+      { name: 'swapDayUrl',       description: 'URL to swap day detail',  example: 'http://localhost:3005/admin/swap-days/xxx' },
+    ],
+  },
+
+  {
+    key: 'SWAP_DAY_COMPENSATED', name: 'Swap Day Compensated — Admin Confirmation',
+    description: 'Sent to admins when a swap day is marked as compensated.',
+    category: 'ADMIN',
+    subject: 'Swap Day Cleared — {{employeeName}} Has Compensated',
+    bodyHtml: WRAP('{{orgName}}', 'Leave Management · Swap Day', `
+${INTRO('<strong>{{employeeName}}</strong> has successfully compensated for their missed day. This swap day is now closed.')}
+${SECTION('Swap Day Summary')}
+${TABLE(
+  ROW('Employee', '{{employeeName}} ({{employeeId}})') +
+  ROW('Absent Date', '{{absentDate}}') +
+  ROW('Compensation Date', '{{compensationDate}}', true)
+)}
+<div style="margin:0 0 24px 0;"><span style="background:#DCFCE7;color:#14532D;padding:4px 14px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block;">Compensated ✓</span></div>
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">No salary deduction is required for this swap day. The record has been closed.</p>
+${BTN('View Swap Days', '{{swapDayUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',          description: 'Organization name',    example: 'Innovizia'    },
+      { name: 'employeeName',     description: "Employee's full name", example: 'Priya Sharma' },
+      { name: 'employeeId',       description: 'Employee ID code',     example: 'EMP-0042'     },
+      { name: 'absentDate',       description: 'The day they missed',  example: '11 Jun 2026'  },
+      { name: 'compensationDate', description: 'The makeup day',       example: '14 Jun 2026'  },
+      { name: 'swapDayUrl',       description: 'URL to swap days',     example: 'http://localhost:3005/admin/swap-days' },
+    ],
+  },
+
+  {
+    key: 'SWAP_DAY_DEFAULTED', name: 'Swap Day Defaulted — Absent Marked',
+    description: 'Sent to admins when a swap day is marked as defaulted and absent is recorded for salary.',
+    category: 'ADMIN',
+    subject: 'Swap Day Defaulted — {{employeeName}} Marked Absent ({{absentDate}})',
+    bodyHtml: WRAP('{{orgName}}', 'Leave Management · Swap Day', `
+${INTRO('<strong>{{employeeName}}</strong> did not compensate by the deadline. The absent day has been recorded for salary calculation.')}
+${SECTION('Swap Day Summary')}
+${TABLE(
+  ROW('Employee', '{{employeeName}} ({{employeeId}})') +
+  ROW('Absent Date', '{{absentDate}}') +
+  ROW('Assigned Compensation Date', '{{compensationDate}}') +
+  ROW('Deadline Was', '{{deadline}}', true)
+)}
+<div style="margin:0 0 24px 0;"><span style="background:#FFEDD5;color:#78350F;padding:4px 14px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block;">Defaulted — Absent Recorded</span></div>
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 24px 0;line-height:1.7;">The absent date has been added to the attendance record and will be reflected in the monthly report and salary calculation.</p>
+${BTN('View Swap Days', '{{swapDayUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',          description: 'Organization name',       example: 'Innovizia'    },
+      { name: 'employeeName',     description: "Employee's full name",    example: 'Priya Sharma' },
+      { name: 'employeeId',       description: 'Employee ID code',        example: 'EMP-0042'     },
+      { name: 'absentDate',       description: 'The day they missed',     example: '11 Jun 2026'  },
+      { name: 'compensationDate', description: 'The assigned makeup day', example: '14 Jun 2026'  },
+      { name: 'deadline',         description: 'Deadline that passed',    example: '11 Jul 2026'  },
+      { name: 'swapDayUrl',       description: 'URL to swap days',        example: 'http://localhost:3005/admin/swap-days' },
+    ],
+  },
+
+  {
+    key: 'SWAP_DAY_WEEKLY_DIGEST', name: 'Swap Day Weekly Digest — Admin',
+    description: 'Sent to admins every Monday morning with a summary of pending/overdue swap days.',
+    category: 'ADMIN',
+    subject: '{{orgName}} — Weekly Swap Day Digest ({{pendingCount}} Pending)',
+    bodyHtml: WRAP('{{orgName}}', 'Leave Management · Weekly Swap Day Digest', `
+${INTRO('Here is your weekly summary of <strong>Swap Days</strong> that require attention.')}
+${SECTION('Summary')}
+${TABLE(
+  ROW('Overdue (Comp Date Passed)', '{{overdueCount}}') +
+  ROW('Due Within 7 Days', '{{dueSoonCount}}') +
+  ROW('Total Pending', '{{pendingCount}}', true)
+)}
+${DIVIDER()}
+<p style="color:${COLOR_TEXT_MUTED};font-size:13px;margin:0 0 16px 0;line-height:1.7;">{{overdueListHtml}}</p>
+${BTN('Manage Swap Days', '{{swapDayUrl}}')}
+`),
+    variables: [
+      { name: 'orgName',        description: 'Organization name',                example: 'Innovizia' },
+      { name: 'pendingCount',   description: 'Total pending swap days',          example: '5'         },
+      { name: 'overdueCount',   description: 'Overdue swap days',                example: '2'         },
+      { name: 'dueSoonCount',   description: 'Due within next 7 days',           example: '1'         },
+      { name: 'overdueListHtml',description: 'HTML list of overdue employees',   example: ''          },
+      { name: 'swapDayUrl',     description: 'URL to swap days page',            example: 'http://localhost:3005/admin/swap-days' },
+    ],
+  },
+
   {
     key: 'YEAR_START_BALANCE_ROLLOVER', name: 'New Year Leave Balance Initialized',
     description: 'Sent to admins on January 1st confirming leave balances have been rolled over for all employees.',

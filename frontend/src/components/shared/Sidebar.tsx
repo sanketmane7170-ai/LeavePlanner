@@ -66,6 +66,7 @@ const adminNav: NavItem[] = [
       { href: "/admin/leave-requests/leave",  label: "Leave Requests" },
       { href: "/admin/leave-requests/wfh",    label: "WFH Requests"   },
       { href: "/admin/leave-requests/import", label: "Bulk Import"    },
+      { href: "/admin/swap-days",             label: "Swap Days"      },
     ]
   },
   { href: "/admin/reports", label: "Reports & Analytics", icon: TrendingUp },
