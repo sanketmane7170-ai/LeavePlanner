@@ -258,9 +258,11 @@ export const getMuster = async (req: AuthRequest, res: Response): Promise<any> =
           swapCompMeta[day] = { absentDate: toYMD(new Date(matchedComp.absentDate)) };
           if (dateStr <= todayStr) { present++; workingTotal++; }
         } else if (holidaySet.has(dateStr)) {
-          attendance[day] = 'H'; holiday++;
+          attendance[day] = 'H';
+          if (dateStr <= todayStr) holiday++;
         } else if (!isDayWorking(date, workingDays, saturdayRule)) {
-          attendance[day] = 'WO'; weekOff++;
+          attendance[day] = 'WO';
+          if (dateStr <= todayStr) weekOff++;
         } else if (dateStr > todayStr) {
           attendance[day] = '·';
           continue; // future working day — no stats, no corrections, no late marks

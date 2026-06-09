@@ -401,7 +401,7 @@ export default function MusterViewPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="border-collapse text-xs" style={{ minWidth: "max-content" }}>
+            <table className="border-collapse text-xs w-full" style={{ minWidth: "max-content" }}>
               {/* ── Column groups for visual separation ── */}
               <colgroup>
                 <col style={{ minWidth: 180 }} />
@@ -564,7 +564,15 @@ export default function MusterViewPage() {
                       <td key={i} className="border-l border-slate-200 dark:border-slate-700" />
                     ))}
                     {SUMMARY_COLS.map((c) => {
-                      const total = data.employees.reduce((s, e) => s + e.summary[c.key], 0);
+                      // WO and WDs are per-employee metrics — not meaningful as a cross-employee sum
+                      if (c.key === "weekOff" || c.key === "workingDays") {
+                        return (
+                          <td key={c.key} className="px-1 py-2 text-center border-l border-slate-200 dark:border-slate-700 text-slate-300 dark:text-slate-600 text-xs">
+                            —
+                          </td>
+                        );
+                      }
+                      const total = data.employees.reduce((s, e) => s + (e.summary[c.key] ?? 0), 0);
                       return (
                         <td key={c.key} className={cn("px-1 py-2 text-center border-l border-slate-200 dark:border-slate-700 font-bold text-xs tabular-nums", c.th)}>
                           {total}
